@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../logic/user_provider.dart';
 import '../../data/models/wallet_model.dart';
+import '../../core/theme/app_colors.dart';
+import '../widgets/app_ui.dart';
 import 'investor_profile_screen.dart';
 
 class UserManagementScreen extends StatefulWidget {
@@ -12,6 +14,9 @@ class UserManagementScreen extends StatefulWidget {
 }
 
 class _UserManagementScreenState extends State<UserManagementScreen> {
+  final _searchController = TextEditingController();
+  String _query = '';
+
   @override
   void initState() {
     super.initState();
@@ -21,103 +26,198 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   }
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final userProvider = Provider.of<UserProvider>(context);
+    final userProvider = context.watch<UserProvider>();
+    final wallets = userProvider.wallets
+        .where(
+          (wallet) =>
+              wallet.userName.toLowerCase().contains(_query.toLowerCase()) ||
+              wallet.trackName.toLowerCase().contains(_query.toLowerCase()),
+        )
+        .toList();
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'إدارة المستثمرين والصلاحيات',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        toolbarHeight: 72,
+        title: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('المستثمرون'),
+            Text(
+              'إدارة الحسابات والصلاحيات',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+            ),
+          ],
         ),
-        centerTitle: true,
-        backgroundColor: Theme.of(context).primaryColor,
         actions: [
-          // قائمة منبثقة لاختيار طريقة ترتيب عرض الحسابات
           PopupMenuButton<WalletSortType>(
-            icon: const Icon(Icons.sort_rounded, color: Colors.white),
+            tooltip: 'ترتيب المستثمرين',
+            icon: const Icon(Icons.sort_rounded),
             onSelected: (type) => userProvider.changeSortType(type),
             itemBuilder: (context) => [
               const PopupMenuItem(
                 value: WalletSortType.newest,
-                child: Text('⏳ ترتيب حسب: الأحدث أولاً'),
+                child: ListTile(
+                  leading: Icon(Icons.schedule_rounded),
+                  title: Text('الأحدث أولاً'),
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
               const PopupMenuItem(
                 value: WalletSortType.name,
-                child: Text('🔤 ترتيب حسب: الاسم أبجدياً'),
+                child: ListTile(
+                  leading: Icon(Icons.sort_by_alpha_rounded),
+                  title: Text('الاسم أبجدياً'),
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
               const PopupMenuItem(
                 value: WalletSortType.principal,
-                child: Text('💰 ترتيب حسب: رأس المال الأعلى'),
+                child: ListTile(
+                  leading: Icon(Icons.trending_up_rounded),
+                  title: Text('رأس المال الأعلى'),
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
             ],
           ),
+          const SizedBox(width: 50),
         ],
       ),
-      // استبدل جزء الـ body في ملف user_management_screen.dart بهذا الجزء:
-      body: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-            color: Colors.grey.shade200,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'إجمالي الحسابات: ${userProvider.wallets.length}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  userProvider.currentSort == WalletSortType.newest
-                      ? 'الترتيب: الأحدث'
-                      : userProvider.currentSort == WalletSortType.name
-                      ? 'الترتيب: أبجدي'
-                      : 'الترتيب: رأس المال الأعلى',
-                  style: TextStyle(
-                    color: Theme.of(context).primaryColor,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
+      body: AppPage(
+        child: Column(
+          children: [
+            TextField(
+              controller: _searchController,
+              onChanged: (value) => setState(() => _query = value.trim()),
+              decoration: InputDecoration(
+                hintText: 'ابحث باسم المستثمر أو المسار...',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'مسح البحث',
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _query = '');
+                        },
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+              ),
             ),
-          ),
-          Expanded(
-            child: userProvider.isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : userProvider.errorMessage != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Text(
-                        '✗ خطأ اتصال: ${userProvider.errorMessage}\nتأكد من صلاحيات الـ Token بالسيرفر.',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.red),
+            const SizedBox(height: 14),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(
+                        Icons.groups_2_rounded,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
-                  )
-                : userProvider.wallets.isEmpty
-                ? const Center(child: Text('لا يوجد مستثمرون مسجلون حالياً.'))
-                : ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: userProvider.wallets.length,
-                    itemBuilder: (context, index) {
-                      final wallet = userProvider.wallets[index];
-                      return _buildInvestorCard(wallet, userProvider);
-                    },
-                  ),
-          ),
-        ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${userProvider.wallets.length} حساباً استثمارياً',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          Text(
+                            _sortLabel(userProvider.currentSort),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_query.isNotEmpty)
+                      Chip(label: Text('${wallets.length} نتيجة')),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: userProvider.isLoading
+                  ? const AppStateView(kind: AppStateKind.loading)
+                  : userProvider.errorMessage != null
+                  ? AppStateView(
+                      kind: AppStateKind.error,
+                      message: userProvider.errorMessage,
+                      onRetry: userProvider.loadWallets,
+                    )
+                  : wallets.isEmpty
+                  ? AppStateView(
+                      kind: AppStateKind.empty,
+                      title: _query.isEmpty
+                          ? 'لا يوجد مستثمرون مسجلون'
+                          : 'لا توجد نتائج مطابقة',
+                      message: _query.isEmpty
+                          ? 'ستظهر حسابات المستثمرين هنا عند إضافتها.'
+                          : 'جرّب اسماً أو مساراً مختلفاً.',
+                    )
+                  : RefreshIndicator(
+                      onRefresh: userProvider.loadWallets,
+                      child: ListView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.only(bottom: 16),
+                        itemCount: wallets.length,
+                        itemBuilder: (context, index) => FadeSlideIn(
+                          delay: Duration(milliseconds: index * 35),
+                          child: _buildInvestorCard(
+                            wallets[index],
+                            userProvider,
+                          ),
+                        ),
+                      ),
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
+  String _sortLabel(WalletSortType type) {
+    switch (type) {
+      case WalletSortType.newest:
+        return 'مرتب حسب أحدث الحسابات';
+      case WalletSortType.name:
+        return 'مرتب أبجدياً حسب الاسم';
+      case WalletSortType.principal:
+        return 'مرتب حسب رأس المال الأعلى';
+    }
+  }
+
   Widget _buildInvestorCard(WalletModel wallet, UserProvider provider) {
-    final bool isAdmin = wallet.userRole == 'ADMIN';
+    final isAdmin = wallet.userRole == 'ADMIN';
+    final theme = Theme.of(context);
 
     return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      child: ListTile(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
         onTap: () {
           Navigator.push(
             context,
@@ -126,71 +226,132 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
             ),
           );
         },
-        leading: CircleAvatar(
-          backgroundColor: isAdmin
-              ? Colors.amber.shade700
-              : Theme.of(context).primaryColor,
-          child: Icon(
-            isAdmin ? Icons.admin_panel_settings : Icons.person,
-            color: Colors.white,
-          ),
-        ),
-        title: Row(
-          children: [
-            Text(
-              wallet.userName,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            if (isAdmin)
-              Container(
-                margin: const EdgeInsets.only(right: 6),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.amber.shade100,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'مدير',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.amber.shade900,
-                    fontWeight: FontWeight.bold,
-                  ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 25,
+                backgroundColor: isAdmin
+                    ? AppColors.goldSoft
+                    : theme.colorScheme.primaryContainer,
+                child: Icon(
+                  isAdmin
+                      ? Icons.admin_panel_settings_rounded
+                      : Icons.person_outline_rounded,
+                  color: isAdmin ? AppColors.gold : theme.colorScheme.primary,
                 ),
               ),
-          ],
-        ),
-        subtitle: Text(
-          'رأس المال: \$${wallet.principalBalance.toStringAsFixed(2)}\nالمسار: ${wallet.trackType}',
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // زر التعديل والتحكم بالصلاحيات
-            IconButton(
-              icon: const Icon(Icons.edit_outlined, color: Colors.blue),
-              onPressed: () => _showEditDialog(wallet, provider),
-            ),
-            // زر الحذف النهائي والتصفية
-            IconButton(
-              icon: const Icon(Icons.delete_outline_rounded, color: Colors.red),
-              onPressed: () => _confirmDelete(wallet, provider),
-            ),
-          ],
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            wallet.userName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleMedium,
+                          ),
+                        ),
+                        if (isAdmin) ...[
+                          const SizedBox(width: 7),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.goldSoft,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Text(
+                              'مدير',
+                              style: TextStyle(
+                                color: Color(0xFF805B16),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      wallet.trackName.isEmpty
+                          ? wallet.trackType
+                          : wallet.trackName,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '\$${wallet.principalBalance.toStringAsFixed(2)}',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Text(
+                    'رأس المال',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'تعديل',
+                        onPressed: () => _showEditDialog(wallet, provider),
+                        icon: const Icon(Icons.edit_outlined, size: 19),
+                      ),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'حذف',
+                        onPressed: () => _confirmDelete(wallet, provider),
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 19,
+                          color: AppColors.danger,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   // نافذة تعديل الاسم وتغيير الصلاحيات
-  void _showEditDialog(WalletModel wallet, UserProvider provider) {
+  Future<void> _showEditDialog(
+    WalletModel wallet,
+    UserProvider provider,
+  ) async {
     final nameController = TextEditingController(text: wallet.userName);
     String selectedRole = wallet.userRole;
 
-    showDialog(
+    await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('⚙️ تعديل بيانات وصلاحيات المستثمر'),
+        icon: const Icon(Icons.manage_accounts_outlined),
+        title: const Text('تعديل بيانات المستثمر'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -228,24 +389,18 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
             child: const Text('إلغاء'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
-            ),
             onPressed: () async {
               final success = await provider.updateUser(
                 wallet.userId,
                 nameController.text.trim(),
                 selectedRole,
               );
-              if (success && mounted) {
+              if (!mounted) return;
+              if (success) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('🚀 تم حفظ التعديلات بنجاح!'),
-                    backgroundColor: Colors.green,
-                  ),
+                  const SnackBar(content: Text('تم حفظ التعديلات بنجاح.')),
                 );
-                Navigator.pop(ctx);
+                if (ctx.mounted) Navigator.pop(ctx);
               }
             },
             child: const Text('حفظ التعديلات'),
@@ -253,6 +408,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
         ],
       ),
     );
+    nameController.dispose();
   }
 
   // تأكيد الحذف النهائي لحماية الحسابات من الضغط العفوي
@@ -260,7 +416,12 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('⚠️ تنبيه أمني حساس جداً'),
+        icon: const Icon(
+          Icons.warning_amber_rounded,
+          color: AppColors.danger,
+          size: 34,
+        ),
+        title: const Text('حذف الحساب نهائياً؟'),
         content: Text(
           'هل أنت متأكد تماماً من حذف المستثمر "${wallet.userName}" وتصفية محفظته الاستثمارية بالكامل من السيرفر نهائياً؟ لا يمكن التراجع عن هذا الإجراء.',
         ),
@@ -276,14 +437,14 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
             ),
             onPressed: () async {
               final success = await provider.deleteUser(wallet.userId);
-              if (success && mounted) {
+              if (!mounted) return;
+              if (success) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('🗑️ تم تصفية الحساب وحذفه تماماً.'),
-                    backgroundColor: Colors.redAccent,
+                    content: Text('تمت تصفية الحساب وحذفه نهائياً.'),
                   ),
                 );
-                Navigator.pop(ctx);
+                if (ctx.mounted) Navigator.pop(ctx);
               }
             },
             child: const Text('نعم، احذف نهائياً'),

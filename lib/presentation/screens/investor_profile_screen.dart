@@ -7,6 +7,8 @@ import '../../logic/user_provider.dart';
 import '../../core/constants/api_constants.dart';
 import '../../core/network/api_client.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../core/theme/app_colors.dart';
+import '../widgets/app_ui.dart';
 
 class InvestorProfileScreen extends StatefulWidget {
   final WalletModel wallet;
@@ -23,6 +25,16 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
   final _descController = TextEditingController();
   final _shamCashAmountController =
       TextEditingController(); // متحكم مستقل لمبلغ شام كاش
+  bool _isShamCashLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = context.read<TransactionProvider>();
+      if (provider.transactions.isEmpty) provider.loadTransactions();
+    });
+  }
 
   @override
   void dispose() {
@@ -50,55 +62,44 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          currentWallet.userName,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        centerTitle: true,
-        backgroundColor: Theme.of(context).primaryColor,
-        elevation: 0,
-      ),
-      body: Column(
-        children: [
-          // 1. لوحة الملخص المالي للمستثمر
-          _buildFinancialSummaryCard(currentWallet),
-
-          // 2. بوابة مدفوعات شام كاش الذكية والمدمجة
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 14.0,
-              vertical: 4.0,
+        toolbarHeight: 72,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(currentWallet.userName),
+            Text(
+              currentWallet.trackName.isEmpty
+                  ? currentWallet.trackType
+                  : currentWallet.trackName,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
             ),
-            child: _buildShamCashPortal(context, currentWallet),
-          ),
-
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: Text(
-                '📝 كشف الحساب الشخصي',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+          ],
+        ),
+      ),
+      body: AppPage(
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              _buildFinancialSummaryCard(currentWallet),
+              const SizedBox(height: 12),
+              _buildShamCashPortal(context, currentWallet),
+              const Padding(
+                padding: EdgeInsets.only(top: 18, bottom: 10),
+                child: AppSectionHeader(
+                  title: 'كشف الحساب الشخصي',
+                  subtitle: 'الحركات المرتبطة بهذه المحفظة',
+                  icon: Icons.receipt_long_outlined,
                 ),
               ),
-            ),
+              _buildClientTxList(
+                clientTransactions,
+                txProvider.isLoading,
+                currentWallet,
+              ),
+              const SizedBox(height: 12),
+            ],
           ),
-
-          // 3. قائمة الحركات الشخصية للمستثمر
-          Expanded(
-            child: _buildClientTxList(
-              clientTransactions,
-              txProvider.isLoading,
-              currentWallet,
-            ),
-          ),
-        ],
+        ),
       ),
 
       // 4. أزرار الإجراءات السريعة الإدارية التقليدية (إيداع / سحب) بأسفل الشاشة
@@ -110,70 +111,87 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
   Widget _buildFinancialSummaryCard(WalletModel wallet) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Theme.of(context).primaryColor,
-        borderRadius: const BorderRadius.only(
-          bottomLeft: Radius.circular(24),
-          bottomRight: Radius.circular(24),
-        ),
+        gradient: AppColors.heroGradient(Theme.of(context).brightness),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.emerald.withValues(alpha: .22),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
-      child: Card(
-        elevation: 4,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Text(
-                'مسار الاستثمار: ${wallet.trackName} (${wallet.trackType})',
-                style: const TextStyle(color: Colors.grey, fontSize: 13),
+              const AppBrandMark(size: 48, onDark: true),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      wallet.userName,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      '${wallet.trackName} • ${wallet.trackType}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const Divider(height: 20),
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  Column(
-                    children: [
-                      const Text(
-                        'رأس المال الحالي',
-                        style: TextStyle(color: Colors.black54, fontSize: 13),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '\$${wallet.principalBalance.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blueGrey,
-                        ),
-                      ),
-                    ],
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: .11),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  wallet.userRole == 'ADMIN' ? 'مدير' : 'مستثمر',
+                  style: const TextStyle(
+                    color: AppColors.goldSoft,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
                   ),
-                  Container(width: 1, height: 40, color: Colors.grey.shade300),
-                  Column(
-                    children: [
-                      const Text(
-                        'إجمالي الأرباح المنزلة',
-                        style: TextStyle(color: Colors.black54, fontSize: 13),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '\$${wallet.totalProfitsEarned.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 22),
+          Row(
+            children: [
+              Expanded(
+                child: _HeroAmount(
+                  label: 'رأس المال الحالي',
+                  value: '\$${wallet.principalBalance.toStringAsFixed(2)}',
+                ),
+              ),
+              Container(
+                width: 1,
+                height: 42,
+                color: Colors.white.withValues(alpha: .18),
+              ),
+              Expanded(
+                child: _HeroAmount(
+                  label: 'إجمالي الأرباح',
+                  value: '\$${wallet.totalProfitsEarned.toStringAsFixed(2)}',
+                  accent: AppColors.goldSoft,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -181,164 +199,211 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
   // ويدجت بوابة مدفوعات شام كاش الذكية
   Widget _buildShamCashPortal(BuildContext context, WalletModel wallet) {
     final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final theme = Theme.of(context);
 
     return Card(
-      color: Colors.indigo.shade50,
-      elevation: 1.5,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                const Icon(
-                  Icons.account_balance_wallet,
-                  color: Colors.indigo,
-                  size: 22,
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.account_balance_wallet_outlined,
+                    color: theme.colorScheme.primary,
+                    size: 21,
+                  ),
                 ),
                 const SizedBox(width: 8),
-                const Text(
-                  'بوابة مدفوعات شام كاش (ShamCash الآلية)',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                    color: Colors.indigo,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'بوابة ShamCash',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        wallet.phone.isEmpty
+                            ? 'لا يوجد رقم محفظة مسجل'
+                            : wallet.phone,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: .1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'متصل',
+                    style: TextStyle(
+                      color: AppColors.success,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ],
             ),
-            const Divider(height: 16),
-            Text(
-              '📱 رقم المحفظة المسجل: ${wallet.phone.isEmpty ? "غير مدرج" : wallet.phone}',
-              style: const TextStyle(fontSize: 12, color: Colors.black87),
-            ),
-            const SizedBox(height: 8),
-
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 45,
-                    child: TextFormField(
+            const SizedBox(height: 16),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 570;
+                final field = TextFormField(
                       controller: _shamCashAmountController,
-                      keyboardType: TextInputType.number,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
                       decoration: const InputDecoration(
                         labelText: 'المبلغ المطلوب',
-                        prefixIcon: Icon(Icons.money, size: 20),
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(vertical: 8),
-                        fillColor: Colors.white,
-                        filled: true,
+                        prefixIcon: Icon(Icons.payments_outlined),
                       ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green.shade700,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  onPressed: () async {
-                    if (_shamCashAmountController.text.trim().isEmpty) return;
-
-                    final apiClient = ApiClient();
-                    final response = await apiClient.post(
-                      '${ApiConstants.baseUrl}/users/shamcash/deposit',
-                      body: {
-                        'walletId': wallet.id,
-                        'amount': double.parse(
-                          _shamCashAmountController.text.trim(),
-                        ),
-                        'phone': wallet.phone,
-                      },
                     );
-
-                    if (response.statusCode == 200 && context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            '⚡ تم إنشاء طلب الإيداع وإرسال الفاتورة بنجاح عبر ShamCash!',
-                          ),
-                          backgroundColor: Colors.green,
-                        ),
-                      );
-                      _shamCashAmountController.clear();
-                      userProvider.loadWallets();
-                    }
-                  },
-                  child: const Text(
-                    'شحن آلي',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                final depositButton = ElevatedButton.icon(
+                  onPressed: _isShamCashLoading
+                      ? null
+                      : () => _requestShamCashDeposit(wallet, userProvider),
+                  icon: _isShamCashLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.add_card_rounded, size: 18),
+                  label: Text(
+                    _isShamCashLoading ? 'جارٍ الإرسال' : 'شحن آلي',
                   ),
-                ),
-                const SizedBox(width: 4),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red.shade700,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  onPressed: () async {
-                    if (_shamCashAmountController.text.trim().isEmpty) return;
-
-                    showDialog(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('⚠️ تأكيد الصرف المباشر'),
-                        content: Text(
-                          'هل أنت متأكد من تحويل مالي فوري بقيمة \$${_shamCashAmountController.text} مباشرة من محفظة شركتك لشام كاش الخاصة بالعميل؟',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx),
-                            child: const Text('إلغاء'),
-                          ),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                            ),
-                            onPressed: () async {
-                              Navigator.pop(ctx);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    '🚀 جاري معالجة صرف الحوالة الفورية للعميل...',
-                                  ),
-                                  backgroundColor: Colors.orange,
-                                ),
-                              );
-                            },
-                            child: const Text('نعم، حوّل الآن'),
-                          ),
+                );
+                final payoutButton = OutlinedButton.icon(
+                  onPressed: _isShamCashLoading
+                      ? null
+                      : () => _confirmShamCashPayout(wallet),
+                  icon: const Icon(Icons.send_outlined, size: 18),
+                  label: const Text('صرف فوري'),
+                );
+                if (isCompact) {
+                  return Column(
+                    children: [
+                      field,
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(child: depositButton),
+                          const SizedBox(width: 8),
+                          Expanded(child: payoutButton),
                         ],
                       ),
-                    );
-                  },
-                  child: const Text(
-                    'صرف فوري',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(child: field),
+                    const SizedBox(width: 10),
+                    depositButton,
+                    const SizedBox(width: 8),
+                    payoutButton,
+                  ],
+                );
+              },
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _requestShamCashDeposit(
+    WalletModel wallet,
+    UserProvider userProvider,
+  ) async {
+    final amount = double.tryParse(_shamCashAmountController.text.trim());
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('أدخل مبلغاً صالحاً أولاً.')),
+      );
+      return;
+    }
+    setState(() => _isShamCashLoading = true);
+    try {
+      final response = await ApiClient().post(
+        '${ApiConstants.baseUrl}/users/shamcash/deposit',
+        body: {'walletId': wallet.id, 'amount': amount, 'phone': wallet.phone},
+      );
+      if (!mounted) return;
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم إنشاء طلب الإيداع وإرسال الفاتورة.')),
+        );
+        _shamCashAmountController.clear();
+        userProvider.loadWallets();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر إنشاء طلب الإيداع عبر ShamCash.')),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر الاتصال بخدمة ShamCash. تحقق من الشبكة.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isShamCashLoading = false);
+    }
+  }
+
+  Future<void> _confirmShamCashPayout(WalletModel wallet) async {
+    final amount = double.tryParse(_shamCashAmountController.text.trim());
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('أدخل مبلغاً صالحاً أولاً.')),
+      );
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(
+          Icons.warning_amber_rounded,
+          color: AppColors.warning,
+          size: 34,
+        ),
+        title: const Text('تأكيد الصرف المباشر'),
+        content: Text(
+          'سيتم تحويل \$${amount.toStringAsFixed(2)} مباشرة إلى محفظة ${wallet.userName}. هل تريد المتابعة؟',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('جارٍ معالجة الحوالة الفورية...')),
+              );
+            },
+            child: const Text('تأكيد التحويل'),
+          ),
+        ],
       ),
     );
   }
@@ -350,67 +415,30 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
     WalletModel currentWallet,
   ) {
     if (isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppStateView(kind: AppStateKind.loading);
     }
     if (transactions.isEmpty) {
-      return const Center(
-        child: Text('لا توجد عمليات ماليّة مسجلة لهذا الحساب حتى الآن.'),
+      return const AppStateView(
+        kind: AppStateKind.empty,
+        title: 'لا توجد حركات لهذه المحفظة',
+        message: 'ستظهر عمليات الإيداع والسحب هنا فور تسجيلها.',
       );
     }
 
     return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
       itemCount: transactions.length,
       itemBuilder: (context, index) {
         final tx = transactions[index];
-        final isDeposit = tx.type == 'DEPOSIT';
-
-        return Card(
-          elevation: 1,
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: isDeposit
-                  ? Colors.green.shade50
-                  : Colors.red.shade50,
-              child: Icon(
-                isDeposit ? Icons.arrow_downward : Icons.arrow_upward,
-                color: isDeposit ? Colors.green.shade700 : Colors.red.shade700,
-                size: 20,
-              ),
-            ),
-            title: Text(
-              tx.description.isEmpty
-                  ? (isDeposit ? 'إيداع رأس مال' : 'سحب مالي')
-                  : tx.description,
-            ),
-            subtitle: Text(
-              DateFormat('yyyy/MM/dd hh:mm a').format(tx.date),
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '${isDeposit ? "+" : "-"}\$${tx.amount.toStringAsFixed(2)}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: isDeposit
-                        ? Colors.green.shade700
-                        : Colors.red.shade700,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(
-                    Icons.share_outlined,
-                    color: Colors.blueGrey,
-                    size: 20,
-                  ),
-                  onPressed: () {
-                    final String receiptText =
-                        '''
+        return TransactionCard(
+          transaction: tx,
+          compact: true,
+          onShare: () async {
+            final isDeposit = tx.type == 'DEPOSIT';
+            final receiptText =
+                '''
 🧾 *سند مالي رسمي - شركة الشامي*
 ----------------------------------
 👤 *المستثمر:* ${currentWallet.userName}
@@ -426,15 +454,13 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
 _تم توليد هذا السند تلقائياً عبر نظام الشامي نت لإدارة الأرباح والمحافظ الحية._
 ''';
 
-                    Share.share(
-                      receiptText,
-                      subject: 'سند مالي - ${currentWallet.userName}',
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
+            await SharePlus.instance.share(
+              ShareParams(
+                text: receiptText,
+                subject: 'سند مالي - ${currentWallet.userName}',
+              ),
+            );
+          },
         );
       },
     );
@@ -450,12 +476,7 @@ _تم توليد هذا السند تلقائياً عبر نظام الشامي
             Expanded(
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                  backgroundColor: AppColors.success,
                 ),
                 onPressed: () =>
                     _showTransactionBottomSheet(context, wallet, 'DEPOSIT'),
@@ -470,12 +491,7 @@ _تم توليد هذا السند تلقائياً عبر نظام الشامي
             Expanded(
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                  backgroundColor: AppColors.danger,
                 ),
                 onPressed: () =>
                     _showTransactionBottomSheet(context, wallet, 'WITHDRAW'),
@@ -519,14 +535,15 @@ _تم توليد هذا السند تلقائياً عبر نظام الشامي
             left: 16,
             right: 16,
           ),
-          child: Form(
-            key: _formKey,
-            child: Column(
+          child: SingleChildScrollView(
+            child: Form(
+              key: _formKey,
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isDeposit ? '📥 قيد سند إيداع جديد' : '📤 قيد سند سحب مالي',
+                  isDeposit ? 'قيد سند إيداع جديد' : 'قيد سند سحب مالي',
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -564,11 +581,8 @@ _تم توليد هذا السند تلقائياً عبر نظام الشامي
                   width: double.infinity,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: isDeposit
-                          ? Colors.green.shade700
-                          : Colors.red.shade700,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      backgroundColor:
+                          isDeposit ? AppColors.success : AppColors.danger,
                     ),
                     onPressed: () async {
                       if (_formKey.currentState!.validate()) {
@@ -583,18 +597,18 @@ _تم توليد هذا السند تلقائياً عبر نظام الشامي
                               description: _descController.text.trim(),
                             );
 
-                        if (success && mounted) {
+                        if (!mounted) return;
+                        if (success) {
                           Provider.of<UserProvider>(
                             context,
                             listen: false,
                           ).loadWallets();
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('🚀 تم تسجيل وتوثيق السند بنجاح!'),
-                              backgroundColor: Colors.green,
+                              content: Text('تم تسجيل وتوثيق السند بنجاح.'),
                             ),
                           );
-                          Navigator.pop(ctx);
+                          if (ctx.mounted) Navigator.pop(ctx);
                         }
                       }
                     },
@@ -606,10 +620,47 @@ _تم توليد هذا السند تلقائياً عبر نظام الشامي
                 ),
                 const SizedBox(height: 20),
               ],
+              ),
             ),
           ),
         );
       },
+    );
+  }
+}
+
+class _HeroAmount extends StatelessWidget {
+  const _HeroAmount({
+    required this.label,
+    required this.value,
+    this.accent = Colors.white,
+  });
+
+  final String label;
+  final String value;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white60, fontSize: 11),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.fade,
+          style: TextStyle(
+            color: accent,
+            fontSize: 19,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
     );
   }
 }

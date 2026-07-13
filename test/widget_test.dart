@@ -1,30 +1,64 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:arrpa7y/main.dart';
+import 'package:arrpa7y/data/models/transaction_model.dart';
+import 'package:arrpa7y/logic/theme_provider.dart';
+import 'package:arrpa7y/presentation/widgets/app_ui.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build a minimal app and trigger a frame.
-    await tester.pumpWidget(const MaterialApp(home: Placeholder()));
+  TestWidgetsFlutterBinding.ensureInitialized();
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  test('theme preference is persisted', () async {
+    SharedPreferences.setMockInitialValues({});
+    final provider = ThemeProvider();
+    await provider.setThemeMode(ThemeMode.dark);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    final restoredProvider = ThemeProvider();
+    await restoredProvider.loadTheme();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(restoredProvider.themeMode, ThemeMode.dark);
+  });
+
+  testWidgets('shared empty state renders Arabic message', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: const Scaffold(
+          body: AppStateView(
+            kind: AppStateKind.empty,
+            title: 'لا توجد بيانات',
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('لا توجد بيانات'), findsOneWidget);
+    expect(find.byIcon(Icons.inbox_outlined), findsOneWidget);
+  });
+
+  testWidgets('transaction card exposes financial details', (tester) async {
+    final transaction = TransactionModel(
+      id: 'tx-1',
+      walletId: 'wallet-1',
+      userName: 'مستثمر تجريبي',
+      trackType: 'BITCOIN',
+      type: 'DEPOSIT',
+      amount: 1200,
+      description: 'إيداع رأس مال',
+      date: DateTime(2026, 7, 13),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: Scaffold(
+          body: TransactionCard(transaction: transaction),
+        ),
+      ),
+    );
+
+    expect(find.text('مستثمر تجريبي'), findsOneWidget);
+    expect(find.text('+\$1200.00'), findsOneWidget);
   });
 }

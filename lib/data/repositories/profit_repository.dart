@@ -1,6 +1,6 @@
 import 'dart:convert';
-import '../../../core/constants/api_constants.dart';
-import '../../../core/network/api_client.dart';
+import '../../core/constants/api_constants.dart';
+import '../../core/network/api_client.dart';
 import '../models/profit_simulation_model.dart';
 
 class ProfitRepository {

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart'; // لتنسيق التواريخ بشكل مقروء
 import '../../logic/transaction_provider.dart';
 import '../../logic/user_provider.dart';
+import '../../core/theme/app_colors.dart';
+import '../widgets/app_ui.dart';
 
 class TransactionHistoryScreen extends StatefulWidget {
   const TransactionHistoryScreen({super.key});
@@ -22,31 +23,42 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
         context,
         listen: false,
       ).loadTransactions();
+      Provider.of<UserProvider>(context, listen: false).loadWallets();
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final txProvider = Provider.of<TransactionProvider>(context);
+    final txProvider = context.watch<TransactionProvider>();
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'كشف الحساب والسندات الماليّة',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        toolbarHeight: 72,
+        title: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('السندات المالية'),
+            Text(
+              'سجل موحّد لجميع الحركات',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+            ),
+          ],
         ),
-        centerTitle: true,
-        backgroundColor: Theme.of(context).primaryColor,
         actions: [
-          // زر سريع لإنشاء حركة مالية جديدة من أعلى البار
           IconButton(
-            icon: const Icon(Icons.add_card, color: Colors.white),
+            tooltip: 'إضافة حركة مالية',
+            icon: const Icon(Icons.add_card_outlined),
             onPressed: () => _showActionDialog(context),
           ),
+          const SizedBox(width: 50),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: () => txProvider.loadTransactions(),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _showActionDialog(context),
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('سند جديد'),
+      ),
+      body: AppPage(
         child: _buildTxList(txProvider),
       ),
     );
@@ -54,113 +66,120 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
 
   Widget _buildTxList(TransactionProvider provider) {
     if (provider.isLoading && provider.transactions.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppStateView(kind: AppStateKind.loading);
     }
     if (provider.errorMessage != null && provider.transactions.isEmpty) {
-      // السطر الجديد لمراقبة الخطأ في الكونسول
-      debugPrint('🚨 [Transaction Error]: ${provider.errorMessage}');
-      return Center(
-        child: Text('✗ خطأ أثناء جلب السجلات: ${provider.errorMessage}'),
+      return AppStateView(
+        kind: AppStateKind.error,
+        message: provider.errorMessage,
+        onRetry: provider.loadTransactions,
       );
     }
     if (provider.transactions.isEmpty) {
-      return const Center(child: Text('لا توجد عمليات ماليّة مسجلة حالياً.'));
+      return const AppStateView(
+        kind: AppStateKind.empty,
+        title: 'لا توجد سندات مالية',
+        message: 'أنشئ أول حركة إيداع أو سحب لتظهر هنا.',
+      );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: provider.transactions.length,
-      itemBuilder: (context, index) {
-        final tx = provider.transactions[index];
-        final isDeposit = tx.type == 'DEPOSIT';
+    final deposits = provider.transactions
+        .where((transaction) => transaction.type == 'DEPOSIT')
+        .fold<double>(0, (sum, transaction) => sum + transaction.amount);
+    final withdrawals = provider.transactions
+        .where((transaction) => transaction.type != 'DEPOSIT')
+        .fold<double>(0, (sum, transaction) => sum + transaction.amount);
 
-        return Card(
-          elevation: 1.5,
-          margin: const EdgeInsets.symmetric(vertical: 5),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: isDeposit
-                  ? Colors.green.shade50
-                  : Colors.red.shade50,
-              child: Icon(
-                isDeposit ? Icons.arrow_downward : Icons.arrow_upward,
-                color: isDeposit ? Colors.green.shade700 : Colors.red.shade700,
-              ),
-            ),
-            title: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  tx.userName,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  '${isDeposit ? "+" : "-"}\$${tx.amount.toStringAsFixed(2)}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: isDeposit
-                        ? Colors.green.shade700
-                        : Colors.red.shade700,
-                    fontSize: 16,
-                  ),
-                ),
-              ],
-            ),
-            subtitle: Column(
+    return RefreshIndicator(
+      onRefresh: provider.loadTransactions,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverToBoxAdapter(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 4),
-                Text(
-                  tx.description,
-                  style: const TextStyle(color: Colors.black54),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final cardWidth = constraints.maxWidth >= 650
+                        ? (constraints.maxWidth - 12) / 2
+                        : constraints.maxWidth;
+                    return Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        SizedBox(
+                          width: cardWidth,
+                          child: AppMetricCard(
+                            title: 'إجمالي الإيداعات',
+                            value: '\$${deposits.toStringAsFixed(2)}',
+                            icon: Icons.south_west_rounded,
+                            accent: AppColors.success,
+                          ),
+                        ),
+                        SizedBox(
+                          width: cardWidth,
+                          child: AppMetricCard(
+                            title: 'إجمالي السحوبات',
+                            value: '\$${withdrawals.toStringAsFixed(2)}',
+                            icon: Icons.north_east_rounded,
+                            accent: AppColors.danger,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
-                const SizedBox(height: 2),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'المسار: ${tx.trackType}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.blueGrey,
-                      ),
-                    ),
-                    Text(
-                      DateFormat('yyyy/MM/dd hh:mm a').format(tx.date),
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
-                    ),
-                  ],
+                const SizedBox(height: 22),
+                AppSectionHeader(
+                  title: 'أحدث الحركات',
+                  subtitle: '${provider.transactions.length} سنداً مسجلاً',
+                  icon: Icons.history_rounded,
                 ),
+                const SizedBox(height: 12),
               ],
             ),
           ),
-        );
-      },
+          SliverList.builder(
+            itemCount: provider.transactions.length,
+            itemBuilder: (context, index) => FadeSlideIn(
+              delay: Duration(milliseconds: index * 25),
+              child: TransactionCard(
+                transaction: provider.transactions[index],
+              ),
+            ),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 84)),
+        ],
+      ),
     );
   }
 
   // نافذة تنفيذ عملية (إيداع / سحب) جديدة
-  void _showActionDialog(BuildContext context) {
+  Future<void> _showActionDialog(BuildContext context) async {
     final formKey = GlobalKey<FormState>();
     final amountController = TextEditingController();
     final descController = TextEditingController();
 
     String selectedType = 'DEPOSIT';
     String? selectedWalletId;
+    bool isSubmitting = false;
 
     // جلب قائمة المحافظ المتاحة من الـ UserProvider لتغذية الـ Dropdown
     final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final transactionProvider = Provider.of<TransactionProvider>(
+      context,
+      listen: false,
+    );
 
-    showDialog(
+    await showDialog<void>(
       context: context,
       builder: (ctx) {
         return StatefulBuilder(
-          builder: (context, setDialogState) {
+          builder: (dialogContext, setDialogState) {
             return AlertDialog(
-              title: const Text(
-                '🧾 تسجيل حركة مالية بقيد',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
+              icon: const Icon(Icons.receipt_long_outlined),
+              title: const Text('تسجيل حركة مالية'),
               content: Form(
                 key: formKey,
                 child: SingleChildScrollView(
@@ -229,9 +248,7 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
                       TextFormField(
                         controller: descController,
                         decoration: const InputDecoration(
-                          labelText:
-                              'البيان (مثال: إيداع دفعة إضافية مع أبو جميل)',
-                          border: OutlineInputBorder(),
+                          labelText: 'بيان العملية (اختياري)',
                         ),
                       ),
                     ],
@@ -244,48 +261,52 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
                   child: const Text('إلغاء'),
                 ),
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).primaryColor,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: () async {
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
                     if (formKey.currentState!.validate()) {
-                      final success =
-                          await Provider.of<TransactionProvider>(
-                            context,
-                            listen: false,
-                          ).executeTransaction(
+                      setDialogState(() => isSubmitting = true);
+                      final success = await transactionProvider
+                          .executeTransaction(
                             walletId: selectedWalletId!,
                             type: selectedType,
                             amount: double.parse(amountController.text),
                             description: descController.text.trim(),
                           );
 
-                      if (success && mounted) {
+                      if (!mounted) return;
+                      if (success) {
                         // تحديث أرصدة شاشة إدارة المستخدمين بالتزامن
                         userProvider.loadWallets();
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text(
-                              '🚀 تم قيد السند وتحديث الرصيد التأسيسي بنجاح!',
+                              'تم قيد السند وتحديث الرصيد بنجاح.',
                             ),
-                            backgroundColor: Colors.green,
                           ),
                         );
-                        Navigator.pop(ctx);
+                        if (ctx.mounted) Navigator.pop(ctx);
                       } else {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                              '✗ فشل: ${Provider.of<TransactionProvider>(context, listen: false).errorMessage}',
+                              'فشل التنفيذ: ${transactionProvider.errorMessage}',
                             ),
-                            backgroundColor: Colors.red,
                           ),
                         );
+                        if (ctx.mounted) {
+                          setDialogState(() => isSubmitting = false);
+                        }
                       }
                     }
                   },
-                  child: const Text('قيد وترحيل السند'),
+                  child: isSubmitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('قيد وترحيل السند'),
                 ),
               ],
             );
@@ -293,5 +314,7 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
         );
       },
     );
+    amountController.dispose();
+    descController.dispose();
   }
 }

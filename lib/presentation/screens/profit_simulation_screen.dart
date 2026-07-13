@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../../logic/profit_provider.dart';
 import '../../data/models/profit_simulation_model.dart';
 import '../../logic/user_provider.dart';
+import '../../core/theme/app_colors.dart';
+import '../widgets/app_ui.dart';
 
 class ProfitSimulationScreen extends StatefulWidget {
   const ProfitSimulationScreen({super.key});
@@ -53,48 +55,66 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
     final balances = info['balances'] as List? ?? [];
     final merchantName = info['merchantName'] ?? 'مؤسسة الشامي';
 
-    return Card(
-      color: const Color(0xFF0F1E36), // لون إنديغو داكن عميق
-      elevation: 3,
-      margin: const EdgeInsets.only(bottom: 16.0),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: [AppColors.shamCash, Color(0xFF0B433C)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white12),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.navy.withValues(alpha: .2),
+            blurRadius: 26,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: const [
-                    Icon(
-                      Icons.account_balance_wallet,
-                      color: Colors.greenAccent,
-                      size: 22,
-                    ),
-                    SizedBox(width: 8),
-                    Text(
-                      'السيولة الحية (ShamCash)',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                const Expanded(
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.account_balance_wallet,
+                        color: Colors.greenAccent,
+                        size: 22,
                       ),
-                    ),
-                  ],
+                      SizedBox(width: 8),
+                      Text(
+                        'السيولة الحية (ShamCash)',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Container(
+                  constraints: const BoxConstraints(maxWidth: 150),
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.greenAccent.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
+                    color: Colors.white.withValues(alpha: .1),
+                    borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    merchantName,
+                    merchantName.toString(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Colors.greenAccent,
                       fontSize: 11,
@@ -105,8 +125,9 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
               ],
             ),
             const Divider(color: Colors.white24, height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+            Wrap(
+              spacing: 24,
+              runSpacing: 14,
               children: balances.map<Widget>((bal) {
                 final String currency = bal['currency'] ?? '';
                 final double amount =
@@ -135,25 +156,29 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
                   valueColor = Colors.lightBlueAccent;
                 }
 
-                return Column(
-                  children: [
-                    Text(
-                      currencyLabel,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
+                return ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 112),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        currencyLabel,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      formattedValue,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: valueColor,
+                      const SizedBox(height: 4),
+                      Text(
+                        formattedValue,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: valueColor,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 );
               }).toList(),
             ),
@@ -170,18 +195,25 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'محرك محاكاة وتوزيع الأرباح',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        toolbarHeight: 72,
+        title: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('لوحة الأرباح'),
+            Text(
+              'مراقبة السيولة ومحاكاة التوزيع',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+            ),
+          ],
         ),
-        centerTitle: true,
-        backgroundColor: Theme.of(context).primaryColor,
       ),
-      body: RefreshIndicator(
-        onRefresh: () =>
-            userProvider.loadWallets(), // يحدث المحافظ وشام كاش معاً
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
+      body: AppPage(
+        padding: EdgeInsets.zero,
+        child: RefreshIndicator(
+          onRefresh: userProvider.loadWallets,
+          child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
           child: Form(
             key: _formKey,
             child: Column(
@@ -190,33 +222,43 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
                 // 🚀 عرض كرت السيولة المالي الجديد في المقدمة
                 _buildShamCashStatusCard(userProvider),
 
-                const Text(
-                  '📊 التقرير المالي العام للمؤسسة',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                const AppSectionHeader(
+                  title: 'المشهد المالي العام',
+                  subtitle: 'نظرة مباشرة على أداء المؤسسة',
+                  icon: Icons.dashboard_customize_outlined,
                 ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildStatCard(
+                const SizedBox(height: 14),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final width = constraints.maxWidth;
+                    final cardWidth = width >= 700 ? (width - 12) / 2 : width;
+                    return Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                      SizedBox(
+                        width: cardWidth,
+                        child: _buildStatCard(
                         title: 'إجمالي رؤوس الأموال',
                         value:
                             '\$${userProvider.totalSystemPrincipal.toStringAsFixed(2)}',
-                        color: Colors.blue.shade700,
+                        color: AppColors.info,
                         icon: Icons.account_balance_wallet_rounded,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildStatCard(
+                      SizedBox(
+                        width: cardWidth,
+                        child: _buildStatCard(
                         title: 'إجمالي الأرباح الموزعة',
                         value:
                             '\$${userProvider.totalSystemProfitsEarned.toStringAsFixed(2)}',
-                        color: Colors.green.shade700,
+                        color: AppColors.success,
                         icon: Icons.trending_up_rounded,
                       ),
                     ),
-                  ],
+                      ],
+                    );
+                  },
                 ),
 
                 const SizedBox(height: 16),
@@ -226,23 +268,16 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
                   userProvider.trackLiquidityDistribution,
                 ),
 
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16.0),
-                  child: Divider(),
-                ),
-
-                const Text(
-                  '🎛️ محاكي ضخ وتوزيع الأرباح الدورية',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                const SizedBox(height: 24),
+                const AppSectionHeader(
+                  title: 'محاكي توزيع الأرباح',
+                  subtitle: 'اختبر النتائج قبل اعتماد الضخ الفعلي',
+                  icon: Icons.tune_rounded,
                 ),
                 const SizedBox(height: 12),
                 Card(
-                  elevation: 4,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
                   child: Padding(
-                    padding: const EdgeInsets.all(16.0),
+                    padding: const EdgeInsets.all(18),
                     child: Column(
                       children: [
                         DropdownButtonFormField<String>(
@@ -275,54 +310,54 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
                             hintText: 'أدخل الرقم بدون رمز %',
                           ),
                           validator: (val) {
-                            if (val == null || val.trim().isEmpty)
+                            if (val == null || val.trim().isEmpty) {
                               return 'الرجاء إدخال نسبة الربح';
-                            if (double.tryParse(val) == null)
+                            }
+                            final rate = double.tryParse(val);
+                            if (rate == null || !rate.isFinite) {
                               return 'الرجاء إدخال رقم صحيح';
+                            }
+                            if (rate <= 0 || rate > 100) {
+                              return 'يجب أن تكون النسبة أكبر من 0 وأقل من أو تساوي 100';
+                            }
                             return null;
                           },
                         ),
                         const SizedBox(height: 20),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton.icon(
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final simulationButton = OutlinedButton.icon(
                                 onPressed: profitProvider.isLoading
                                     ? null
                                     : _handleSimulation,
                                 icon: const Icon(Icons.analytics_outlined),
                                 label: const Text('تشغيل المحاكاة'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Theme.of(
-                                    context,
-                                  ).colorScheme.secondary,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: ElevatedButton.icon(
+                              );
+                            final distributionButton = ElevatedButton.icon(
                                 onPressed: profitProvider.isLoading
                                     ? null
                                     : _handleDistribution,
                                 icon: const Icon(Icons.account_balance_wallet),
                                 label: const Text('اعتماد وضخ فعلي'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Theme.of(
-                                    context,
-                                  ).primaryColor,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
+                              );
+                            if (constraints.maxWidth < 430) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  simulationButton,
+                                  const SizedBox(height: 10),
+                                  distributionButton,
+                                ],
+                              );
+                            }
+                            return Row(
+                              children: [
+                                Expanded(child: simulationButton),
+                                const SizedBox(width: 12),
+                                Expanded(child: distributionButton),
+                              ],
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -339,29 +374,15 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
                     ),
                   )
                 else if (profitProvider.errorMessage != null)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.error, color: Colors.red),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            profitProvider.errorMessage!,
-                            style: const TextStyle(color: Colors.red),
-                          ),
-                        ),
-                      ],
-                    ),
+                  AppStateView(
+                    kind: AppStateKind.error,
+                    message: profitProvider.errorMessage,
                   )
                 else if (profitProvider.simulationResult != null)
                   _buildFinancialResults(profitProvider.simulationResult!),
               ],
             ),
+          ),
           ),
         ),
       ),
@@ -374,32 +395,11 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
     required Color color,
     required IconData icon,
   }) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: color, size: 28),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              style: const TextStyle(fontSize: 12, color: Colors.black54),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-          ],
-        ),
-      ),
+    return AppMetricCard(
+      title: title,
+      value: value,
+      icon: icon,
+      accent: color,
     );
   }
 
@@ -408,8 +408,6 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
     Map<String, double> distribution,
   ) {
     return Card(
-      elevation: 1.5,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -419,13 +417,15 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
               children: [
                 Icon(
                   Icons.pie_chart_outline_rounded,
-                  color: Theme.of(context).primaryColor,
+                  color: Theme.of(context).colorScheme.primary,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
-                const Text(
-                  '🎯 نسبة توزيع السيولة حسب مسارات الاستثمار',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                const Expanded(
+                  child: Text(
+                    'توزيع السيولة حسب المسار',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
                 ),
               ],
             ),
@@ -463,10 +463,11 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
                       const SizedBox(height: 4),
                       LinearProgressIndicator(
                         value: entry.value / 100,
-                        backgroundColor: Colors.grey.shade200,
-                        color: Theme.of(context).primaryColor,
-                        minHeight: 6,
-                        borderRadius: BorderRadius.circular(4),
+                        backgroundColor:
+                            Theme.of(context).colorScheme.surfaceContainerHighest,
+                        color: Theme.of(context).colorScheme.primary,
+                        minHeight: 8,
+                        borderRadius: BorderRadius.circular(8),
                       ),
                     ],
                   ),
@@ -558,8 +559,12 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
               rows: res.breakdown.map((user) {
                 final isAdmin = user.role == 'ADMIN';
                 return DataRow(
-                  color: MaterialStateProperty.resolveWith<Color?>((states) {
-                    if (isAdmin) return Colors.green.shade50;
+                  color: WidgetStateProperty.resolveWith<Color?>((states) {
+                    if (isAdmin) {
+                      return Theme.of(
+                        context,
+                      ).colorScheme.primaryContainer.withValues(alpha: .35);
+                    }
                     return null;
                   }),
                   cells: [
@@ -655,7 +660,12 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('⚠️ تأكيد الضخ المالي الفعلي'),
+        icon: const Icon(
+          Icons.warning_amber_rounded,
+          color: AppColors.warning,
+          size: 34,
+        ),
+        title: const Text('تأكيد الضخ المالي الفعلي'),
         content: Text(
           'هل أنت متأكد من اعتماد ونشر هذه الأرباح بنسبة ${_formatPercent(rate)} للمسار المحدد؟ سيتم تحديث أرصدة المحافظ الفعلية وتوليد سندات مالية فوراً ولا يمكن التراجع!',
         ),
@@ -679,9 +689,8 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text(
-                      '🚀 تم ترحيل وضخ الأرباح للمحفظات وتوليد السندات بنجاح تام!',
+                      'تم ترحيل الأرباح للمحافظ وتوليد السندات بنجاح.',
                     ),
-                    backgroundColor: Colors.green,
                   ),
                 );
                 provider.resetData();

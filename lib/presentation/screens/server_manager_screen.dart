@@ -4,6 +4,8 @@ import 'package:code_text_field/code_text_field.dart';
 import 'package:highlight/languages/typescript.dart'; // لتلوين كود السيرفر بدقة
 import 'package:flutter_highlight/themes/monokai-sublime.dart'; // ستايل محرر الأكواد الداكن الاحترافي
 import '../../logic/server_file_provider.dart';
+import '../../core/theme/app_colors.dart';
+import '../widgets/app_ui.dart';
 
 class ServerManagerScreen extends StatefulWidget {
   const ServerManagerScreen({super.key});
@@ -17,6 +19,7 @@ class _ServerManagerScreenState extends State<ServerManagerScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       Provider.of<ServerFileProvider>(
         context,
         listen: false,
@@ -30,26 +33,62 @@ class _ServerManagerScreenState extends State<ServerManagerScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'المستعرض والتحكم بملفات السيرفر',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        toolbarHeight: 72,
+        title: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('إدارة السيرفر'),
+            Text(
+              'مستعرض آمن لملفات النظام',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+            ),
+          ],
         ),
-        centerTitle: true,
-        backgroundColor: Theme.of(context).primaryColor,
       ),
-      body: fileProvider.isLoading
-          ? const Center(child: CircularProgressIndicator())
+      body: AppPage(
+        child: fileProvider.isLoading
+          ? const AppStateView(kind: AppStateKind.loading)
           : fileProvider.errorMessage != null
-          ? Center(child: Text('✗ خطأ: ${fileProvider.errorMessage}'))
+          ? AppStateView(
+              kind: AppStateKind.error,
+              message: fileProvider.errorMessage,
+              onRetry: fileProvider.fetchServerFiles,
+            )
+          : fileProvider.fileTree.isEmpty
+          ? const AppStateView(
+              kind: AppStateKind.empty,
+              title: 'لا توجد ملفات متاحة',
+              message: 'لم يُرجع السيرفر أي ملفات قابلة للإدارة.',
+            )
           : RefreshIndicator(
-              onRefresh: () => fileProvider.fetchServerFiles(),
-              child: ListView.builder(
-                itemCount: fileProvider.fileTree.length,
-                itemBuilder: (context, index) {
-                  return _buildFileNode(fileProvider.fileTree[index]);
-                },
+              onRefresh: fileProvider.fetchServerFiles,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: AppSectionHeader(
+                        title: 'شجرة ملفات المشروع',
+                        subtitle:
+                            '${fileProvider.fileTree.length} عنصراً في المستوى الرئيسي',
+                        icon: Icons.account_tree_outlined,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Card(
+                    child: Column(
+                      children: fileProvider.fileTree
+                          .map<Widget>(_buildFileNode)
+                          .toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
               ),
             ),
+      ),
     );
   }
 
@@ -61,7 +100,7 @@ class _ServerManagerScreenState extends State<ServerManagerScreen> {
 
     if (isFolder) {
       return ExpansionTile(
-        leading: const Icon(Icons.folder_open, color: Colors.amber),
+        leading: const Icon(Icons.folder_open_rounded, color: AppColors.gold),
         title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
         children: (node['children'] as List? ?? [])
             .map((child) => _buildFileNode(child))
@@ -69,12 +108,12 @@ class _ServerManagerScreenState extends State<ServerManagerScreen> {
       );
     } else {
       return ListTile(
-        leading: const Icon(
+        leading: Icon(
           Icons.insert_drive_file_outlined,
-          color: Colors.blueGrey,
+          color: Theme.of(context).colorScheme.primary,
         ),
         title: Text(name),
-        trailing: const Icon(Icons.edit_note, color: Colors.grey),
+        trailing: const Icon(Icons.edit_note_rounded),
         onTap: () => _openCodeEditor(relativePath, name),
       );
     }
@@ -88,7 +127,10 @@ class _ServerManagerScreenState extends State<ServerManagerScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: Center(child: CircularProgressIndicator()),
+      ),
     );
 
     final String? codeContent = await provider.readFileContent(relativePath);
@@ -98,8 +140,7 @@ class _ServerManagerScreenState extends State<ServerManagerScreen> {
     if (codeContent == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('✗ تعذر قراءة محتوى الملف من السيرفر'),
-          backgroundColor: Colors.red,
+          content: Text('تعذر قراءة محتوى الملف من السيرفر.'),
         ),
       );
       return;
@@ -112,7 +153,7 @@ class _ServerManagerScreenState extends State<ServerManagerScreen> {
     );
 
     // فتح شاشة المحرر الكاملة بصورة منبثقة ملء الشاشة
-    Navigator.push(
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => Scaffold(
@@ -120,9 +161,19 @@ class _ServerManagerScreenState extends State<ServerManagerScreen> {
             0xFF23241F,
           ), // المظهر الداكن المريح للعين
           appBar: AppBar(
-            title: Text(
-              fileName,
-              style: const TextStyle(color: Colors.white, fontSize: 16),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  fileName,
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                ),
+                Text(
+                  relativePath,
+                  textDirection: TextDirection.ltr,
+                  style: const TextStyle(color: Colors.white54, fontSize: 10),
+                ),
+              ],
             ),
             backgroundColor: const Color(0xFF1F1F1F),
             iconTheme: const IconThemeData(color: Colors.white),
@@ -142,17 +193,15 @@ class _ServerManagerScreenState extends State<ServerManagerScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text(
-                          '🚀 تم ترحيل الكود وحفظ وتحديث الملف على سيرفرك الحي بنجاح!',
+                          'تم حفظ الملف وتحديثه على السيرفر بنجاح.',
                         ),
-                        backgroundColor: Colors.green,
                       ),
                     );
                     Navigator.pop(context);
                   } else if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('✗ خطأ أثناء محاولة كتابة وحفظ الملف'),
-                        backgroundColor: Colors.red,
+                        content: Text('تعذر كتابة الملف وحفظه على السيرفر.'),
                       ),
                     );
                   }
@@ -161,14 +210,17 @@ class _ServerManagerScreenState extends State<ServerManagerScreen> {
             ],
           ),
           body: SafeArea(
-            child: CodeTheme(
-              data: CodeThemeData(styles: monokaiSublimeTheme),
-              child: SingleChildScrollView(
-                child: CodeField(
-                  controller: codeController,
-                  textStyle: const TextStyle(
-                    fontFamily: 'Courier',
-                    fontSize: 13,
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: CodeTheme(
+                data: CodeThemeData(styles: monokaiSublimeTheme),
+                child: SingleChildScrollView(
+                  child: CodeField(
+                    controller: codeController,
+                    textStyle: const TextStyle(
+                      fontFamily: 'Courier',
+                      fontSize: 13,
+                    ),
                   ),
                 ),
               ),
@@ -177,5 +229,6 @@ class _ServerManagerScreenState extends State<ServerManagerScreen> {
         ),
       ),
     );
+    codeController.dispose();
   }
 }
