@@ -9,6 +9,7 @@ class WalletModel {
   final double principalBalance;
   final double totalProfitsEarned;
   final String phone; // 🚀 الحقل الجديد لربط محفظة شام كاش
+  final double? customCommissionRate; // 👈 إضافة حقل العمولة الخاصة
 
   WalletModel({
     required this.id,
@@ -21,10 +22,11 @@ class WalletModel {
     required this.principalBalance,
     required this.totalProfitsEarned,
     required this.phone,
+    this.customCommissionRate, // 👈 هنا[cite: 1, 2]
   });
 
   factory WalletModel.fromJson(Map<String, dynamic> json) {
-    // تفكيك الكائنات المتداخلة (Populated fields) القادمة من السيرفر
+    // تفكيك الكائنات المتداخلة (Populated fields) القادمة من السيرفر[cite: 1, 2]
     final userJson = json['userId'] as Map<String, dynamic>? ?? {};
     final trackJson = json['trackId'] as Map<String, dynamic>? ?? {};
 
@@ -37,13 +39,17 @@ class WalletModel {
       trackName: trackJson['name'] ?? '',
       trackType: trackJson['type'] ?? '',
 
-      // تحويل الأرقام بشكل آمن لمنع تعليق التطبيق (Cast Error)
+      // تحويل الأرقام بشكل آمن لمنع تعليق التطبيق (Cast Error)[cite: 1, 2]
       principalBalance: (json['principalBalance'] as num?)?.toDouble() ?? 0.0,
       totalProfitsEarned:
           (json['totalProfitsEarned'] as num?)?.toDouble() ?? 0.0,
 
-      // 🚀 الإصلاح: قراءة الهاتف من كائن المستخدم المتداخل وليس من المحفظة مباشرة
+      // 🚀 قراءة الهاتف من كائن المستخدم المتداخل وليس من المحفظة مباشرة[cite: 1, 2]
       phone: userJson['phone'] ?? '',
+
+      // 👈 الإصلاح الأخير: قراءة العمولة الخاصة من كائن المستخدم المتداخل بأمان[cite: 1, 2]
+      customCommissionRate: (userJson['customCommissionRate'] as num?)
+          ?.toDouble(),
     );
   }
 }
