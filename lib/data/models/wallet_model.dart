@@ -26,7 +26,6 @@ class WalletModel {
   });
 
   factory WalletModel.fromJson(Map<String, dynamic> json) {
-    // تفكيك الكائنات المتداخلة (Populated fields) القادمة من السيرفر
     final userJson = json['userId'] as Map<String, dynamic>? ?? {};
     final trackJson = json['trackId'] as Map<String, dynamic>? ?? {};
 
