@@ -1,4 +1,4 @@
-package com.example.arrpa7y
+package com.shami.arrpa7y
 
 import io.flutter.embedding.android.FlutterActivity
 

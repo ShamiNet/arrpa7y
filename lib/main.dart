@@ -1,22 +1,27 @@
-import 'package:arrpa7y/logic/auth_provider.dart';
-import 'package:arrpa7y/logic/server_file_provider.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
+
+// 👈 استخدام المسارات النسبية حصراً يمنع أخطاء الـ Provider
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
+import 'logic/ai_provider.dart';
+import 'logic/auth_provider.dart';
 import 'logic/profit_provider.dart';
 import 'logic/theme_provider.dart';
-import 'logic/user_provider.dart';
-import 'presentation/screens/profit_simulation_screen.dart';
-import 'presentation/screens/user_management_screen.dart';
 import 'logic/transaction_provider.dart';
-import 'presentation/screens/server_manager_screen.dart';
-import 'presentation/screens/transaction_history_screen.dart';
+import 'logic/user_provider.dart';
+import 'presentation/screens/admin_dashboard_screen.dart';
 import 'presentation/screens/login_screen.dart';
+import 'presentation/screens/profit_simulation_screen.dart';
+import 'presentation/screens/transaction_history_screen.dart';
+import 'presentation/screens/user_management_screen.dart';
 import 'presentation/widgets/app_ui.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(); // تهيئة الفيربيس مباشرة
   runApp(const FinancialApp());
 }
 
@@ -34,7 +39,8 @@ class FinancialApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ProfitProvider()),
         ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => TransactionProvider()),
-        ChangeNotifierProvider(create: (_) => ServerFileProvider()),
+        ChangeNotifierProvider(create: (_) => AiProvider()),
+        // تم الاستغناء عن ServerFileProvider بنجاح لعدم الحاجة إليه
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) => MaterialApp(
@@ -76,18 +82,21 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _selectedIndex = 0;
 
-  static const _screens = <Widget>[
-    ProfitSimulationScreen(),
-    UserManagementScreen(),
-    TransactionHistoryScreen(),
-  ];
+  void _selectDestination(int index) => setState(() => _selectedIndex = index);
 
   @override
   Widget build(BuildContext context) {
+    final screens = <Widget>[
+      AdminDashboardScreen(onNavigateToTab: _selectDestination),
+      const ProfitSimulationScreen(),
+      const UserManagementScreen(),
+      const TransactionHistoryScreen(),
+    ];
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 840;
-        final body = IndexedStack(index: _selectedIndex, children: _screens);
+        final body = IndexedStack(index: _selectedIndex, children: screens);
         return Scaffold(
           body: isWide
               ? Row(
@@ -118,6 +127,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   onDestinationSelected: _selectDestination,
                   destinations: const [
                     NavigationDestination(
+                      icon: Icon(Icons.dashboard_outlined),
+                      selectedIcon: Icon(Icons.dashboard_rounded),
+                      label: 'الرئيسية',
+                    ),
+                    NavigationDestination(
                       icon: Icon(Icons.query_stats_outlined),
                       selectedIcon: Icon(Icons.query_stats_rounded),
                       label: 'الأرباح',
@@ -139,18 +153,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     );
   }
 
-  void _selectDestination(int index) => setState(() => _selectedIndex = index);
-
   Future<void> _handleMenuAction(_MenuAction action) async {
     switch (action) {
       case _MenuAction.theme:
         await _showThemePicker(context);
-        break;
-      case _MenuAction.server:
-        if (!mounted) return;
-        await Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const ServerManagerScreen()),
-        );
         break;
       case _MenuAction.logout:
         if (!mounted) return;
@@ -160,7 +166,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
-enum _MenuAction { theme, server, logout }
+enum _MenuAction { theme, logout }
 
 class _AccountMenu extends StatelessWidget {
   const _AccountMenu({required this.onAction});
@@ -178,14 +184,6 @@ class _AccountMenu extends StatelessWidget {
           child: ListTile(
             leading: Icon(Icons.contrast_rounded),
             title: Text('المظهر والثيم'),
-            contentPadding: EdgeInsets.zero,
-          ),
-        ),
-        PopupMenuItem(
-          value: _MenuAction.server,
-          child: ListTile(
-            leading: Icon(Icons.dns_outlined),
-            title: Text('إدارة السيرفر'),
             contentPadding: EdgeInsets.zero,
           ),
         ),
@@ -241,8 +239,10 @@ class _NavigationRail extends StatelessWidget {
                   Expanded(
                     child: Text(
                       'الشامي المالية',
-                      style:
-                          TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
                     ),
                   ),
                 ],
@@ -256,6 +256,11 @@ class _NavigationRail extends StatelessWidget {
                 onDestinationSelected: onDestinationSelected,
                 labelType: NavigationRailLabelType.none,
                 destinations: const [
+                  NavigationRailDestination(
+                    icon: Icon(Icons.dashboard_outlined),
+                    selectedIcon: Icon(Icons.dashboard_rounded),
+                    label: Text('لوحة القيادة'),
+                  ),
                   NavigationRailDestination(
                     icon: Icon(Icons.query_stats_outlined),
                     selectedIcon: Icon(Icons.query_stats_rounded),
@@ -279,15 +284,6 @@ class _NavigationRail extends StatelessWidget {
               child: Column(
                 children: [
                   ListTile(
-                    leading: const Icon(Icons.dns_outlined),
-                    title: const Text('إدارة السيرفر'),
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const ServerManagerScreen(),
-                      ),
-                    ),
-                  ),
-                  ListTile(
                     leading: const Icon(Icons.contrast_rounded),
                     title: const Text('المظهر'),
                     onTap: () => _showThemePicker(context),
@@ -295,8 +291,9 @@ class _NavigationRail extends StatelessWidget {
                   const Divider(),
                   ListTile(
                     leading: CircleAvatar(
-                      backgroundColor:
-                          Theme.of(context).colorScheme.primaryContainer,
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.primaryContainer,
                       child: const Icon(Icons.person_outline_rounded),
                     ),
                     title: Text(auth.adminName ?? 'المدير'),
@@ -328,15 +325,17 @@ Future<void> _showThemePicker(BuildContext context) {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('اختر مظهر التطبيق',
-                style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              'اختر مظهر التطبيق',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
             const SizedBox(height: 12),
             RadioGroup<ThemeMode>(
               groupValue: provider.themeMode,
               onChanged: (mode) {
-                  if (mode == null) return;
-                  provider.setThemeMode(mode);
-                  Navigator.pop(context);
+                if (mode == null) return;
+                provider.setThemeMode(mode);
+                Navigator.pop(context);
               },
               child: Column(
                 mainAxisSize: MainAxisSize.min,

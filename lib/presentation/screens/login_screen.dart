@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+// 👈 استيرادات نسبية سليمة
 import '../../core/theme/app_colors.dart';
 import '../../logic/auth_provider.dart';
 import '../widgets/app_ui.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -114,8 +117,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                 onFieldSubmitted: (_) => _submit(authProvider),
                                 decoration: InputDecoration(
                                   labelText: 'كلمة المرور',
-                                  prefixIcon:
-                                      const Icon(Icons.lock_outline_rounded),
+                                  prefixIcon: const Icon(
+                                    Icons.lock_outline_rounded,
+                                  ),
                                   suffixIcon: IconButton(
                                     tooltip: _obscurePassword
                                         ? 'إظهار كلمة المرور'
@@ -126,8 +130,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                           : Icons.visibility_outlined,
                                     ),
                                     onPressed: () => setState(
-                                      () => _obscurePassword =
-                                          !_obscurePassword,
+                                      () =>
+                                          _obscurePassword = !_obscurePassword,
                                     ),
                                   ),
                                 ),
@@ -176,11 +180,22 @@ class _LoginScreenState extends State<LoginScreen> {
                                   Text(
                                     'اتصال مشفّر • وصول إداري آمن',
                                     style: theme.textTheme.labelSmall?.copyWith(
-                                      color:
-                                          theme.colorScheme.onSurfaceVariant,
+                                      color: theme.colorScheme.onSurfaceVariant,
                                     ),
                                   ),
                                 ],
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => const RegisterScreen(),
+                                    ),
+                                  );
+                                },
+                                child: const Text(
+                                  'ليس لديك حساب؟ سجل مستثمر جديد الآن',
+                                ),
                               ),
                             ],
                           ),
@@ -205,7 +220,9 @@ class _LoginScreenState extends State<LoginScreen> {
     );
     if (!success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(authProvider.errorMessage ?? 'تعذر تسجيل الدخول')),
+        SnackBar(
+          content: Text(authProvider.errorMessage ?? 'تعذر تسجيل الدخول'),
+        ),
       );
     }
   }

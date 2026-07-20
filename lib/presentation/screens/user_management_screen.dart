@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../logic/user_provider.dart';
@@ -139,9 +140,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                           ),
                           Text(
                             _sortLabel(userProvider.currentSort),
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
+                            style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(
                                   color: Theme.of(
                                     context,
@@ -278,6 +277,28 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                             ),
                           ),
                         ],
+                        // 👈 هـــنـــا تُـــضـــاف شارة التجميد الجديدة مباشرة
+                        if (!wallet.isActive) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.danger.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text(
+                              'مجمد',
+                              style: TextStyle(
+                                color: AppColors.danger,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 5),
@@ -312,6 +333,39 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      // زر تجميد / تفعيل الحساب
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        tooltip: wallet.isActive
+                            ? 'تجميد الحساب'
+                            : 'تفعيل الحساب',
+                        onPressed: () async {
+                          final success = await provider.toggleUserStatus(
+                            wallet.userId,
+                            wallet.isActive,
+                          );
+                          if (context.mounted && success) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  wallet.isActive
+                                      ? 'تم تجميد حساب ${wallet.userName}'
+                                      : 'تم إعادة تفعيل حساب ${wallet.userName}',
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                        icon: Icon(
+                          wallet.isActive
+                              ? Icons.block_rounded
+                              : Icons.check_circle_outline_rounded,
+                          size: 19,
+                          color: wallet.isActive
+                              ? AppColors.warning
+                              : AppColors.success,
+                        ),
+                      ),
                       IconButton(
                         visualDensity: VisualDensity.compact,
                         tooltip: 'تعديل',
@@ -345,43 +399,87 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     UserProvider provider,
   ) async {
     final nameController = TextEditingController(text: wallet.userName);
+    final phoneController = TextEditingController(text: wallet.phone);
+    final bonusController = TextEditingController();
+
     String selectedRole = wallet.userRole;
+
+    // جلب نسبة البونص الحالية للمستثمر من Firestore لعرضها بالنافذة
+    final userDoc = await FirebaseFirestore.instance
+        .collection('Users')
+        .doc(wallet.userId)
+        .get();
+    final currentBonus = userDoc.data()?['referralBonusRate'] ?? 0.0;
+    bonusController.text = currentBonus.toString();
+
+    if (!mounted) return;
 
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.manage_accounts_outlined),
         title: const Text('تعديل بيانات المستثمر'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: 'اسم المستثمر المحدث',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: selectedRole,
-              decoration: const InputDecoration(
-                labelText: 'صلاحية الحساب في النظام',
-                border: OutlineInputBorder(),
-              ),
-              items: const [
-                DropdownMenuItem(
-                  value: 'CLIENT',
-                  child: Text('مستثمر عادي (CLIENT)'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'اسم المستثمر',
+                  prefixIcon: Icon(Icons.person_outline),
                 ),
-                DropdownMenuItem(
-                  value: 'ADMIN',
-                  child: Text('مدير كامل الصلاحيات (ADMIN)'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: phoneController,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(
+                  labelText: 'رقم المحفظة / الهاتف (ShamCash)',
+                  prefixIcon: Icon(Icons.phone_outlined),
                 ),
-              ],
-              onChanged: (val) => selectedRole = val!,
-            ),
-          ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: bonusController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'نسبة بونص الإحالة الخاصة (%)',
+                  prefixIcon: Icon(Icons.percent_rounded),
+                  hintText: 'مثال: 0.25',
+                ),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: selectedRole,
+                isExpanded:
+                    true, // 👈 يمنع تجاوز العرض ويضمن تكييف القائمة داخل الحاوية
+                decoration: const InputDecoration(
+                  labelText: 'صلاحية الحساب',
+                  prefixIcon: Icon(Icons.admin_panel_settings_outlined),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'CLIENT',
+                    child: Text(
+                      'مستثمر عادي (CLIENT)',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'ADMIN',
+                    child: Text(
+                      'مدير كامل الصلاحيات (ADMIN)',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+                onChanged: (val) => selectedRole = val!,
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -390,15 +488,22 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
+              final double? bonusRate = double.tryParse(
+                bonusController.text.trim(),
+              );
               final success = await provider.updateUser(
-                wallet.userId,
-                nameController.text.trim(),
-                selectedRole,
+                userId: wallet.userId,
+                newName: nameController.text.trim(),
+                newRole: selectedRole,
+                newPhone: phoneController.text.trim(),
+                newBonusRate: bonusRate,
               );
               if (!mounted) return;
               if (success) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('تم حفظ التعديلات بنجاح.')),
+                  const SnackBar(
+                    content: Text('تم حفظ وتحديث بيانات المستثمر بنجاح.'),
+                  ),
                 );
                 if (ctx.mounted) Navigator.pop(ctx);
               }
@@ -408,7 +513,10 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
         ],
       ),
     );
-    nameController.dispose();
+
+    // nameController.dispose();
+    // phoneController.dispose();
+    // bonusController.dispose();
   }
 
   // تأكيد الحذف النهائي لحماية الحسابات من الضغط العفوي
