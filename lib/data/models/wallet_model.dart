@@ -8,7 +8,8 @@ class WalletModel {
   final String trackType;
   final double principalBalance;
   final double totalProfitsEarned;
-  final String phone; // 🚀 الحقل الجديد لربط محفظة شام كاش
+  final String phone;
+  final bool isActive; // 👈 حقل حالة الحساب الجديد
 
   WalletModel({
     required this.id,
@@ -21,10 +22,10 @@ class WalletModel {
     required this.principalBalance,
     required this.totalProfitsEarned,
     required this.phone,
+    this.isActive = true, // 👈 افتراضياً نشط
   });
 
   factory WalletModel.fromJson(Map<String, dynamic> json) {
-    // تفكيك الكائنات المتداخلة (Populated fields) القادمة من السيرفر
     final userJson = json['userId'] as Map<String, dynamic>? ?? {};
     final trackJson = json['trackId'] as Map<String, dynamic>? ?? {};
 
@@ -36,14 +37,11 @@ class WalletModel {
       trackId: trackJson['_id'] ?? '',
       trackName: trackJson['name'] ?? '',
       trackType: trackJson['type'] ?? '',
-
-      // تحويل الأرقام بشكل آمن لمنع تعليق التطبيق (Cast Error)
       principalBalance: (json['principalBalance'] as num?)?.toDouble() ?? 0.0,
       totalProfitsEarned:
           (json['totalProfitsEarned'] as num?)?.toDouble() ?? 0.0,
-
-      // 🚀 الإصلاح: قراءة الهاتف من كائن المستخدم المتداخل وليس من المحفظة مباشرة
       phone: userJson['phone'] ?? '',
+      isActive: userJson['isActive'] ?? true, // 👈 قراءة حالة التجميد
     );
   }
 }
