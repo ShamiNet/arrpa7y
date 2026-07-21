@@ -22,7 +22,7 @@ class AuthProvider with ChangeNotifier {
     if (user != null) {
       _isAuthenticated = true;
       // جلب اسم المدير من Firestore
-      final doc = await _db.collection('Users').doc(user.uid).get();
+      final doc = await _db.collection('users').doc(user.uid).get();
       _adminName = doc.data()?['name'] ?? 'المدير الشامي';
     } else {
       _isAuthenticated = false;
@@ -43,12 +43,15 @@ class AuthProvider with ChangeNotifier {
       );
 
       final userDoc = await _db
-          .collection('Users')
+          .collection('users')
           .doc(credential.user!.uid)
           .get();
       final userData = userDoc.data();
 
-      if (userData != null && userData['role'] == 'ADMIN') {
+      if (userData != null &&
+          (userData['role'] == 'admin' ||
+              userData['role'] == 'ADMIN' ||
+              userData['role'] == 'owner')) {
         _adminName = userData['name'] ?? 'المدير الشامي';
         _isAuthenticated = true;
         _isLoading = false;
@@ -105,7 +108,7 @@ class AuthProvider with ChangeNotifier {
       final String createdAtStr = DateTime.now().toIso8601String();
 
       // 2. تدوين بيانات المستخدم في Firestore
-      await _db.collection('Users').doc(uid).set({
+      await _db.collection('users').doc(uid).set({
         'name': name,
         'email': email,
         'phone': phone,
