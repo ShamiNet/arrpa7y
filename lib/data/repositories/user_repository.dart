@@ -5,37 +5,44 @@ import '../models/wallet_model.dart';
 class UserRepository {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // جلب كافة المحافظ والبيانات المشتركة يدوياً من Firestore
+  // جلب كافة المحافظ والبيانات المشتركة دفعة واحدة وبسرعة عالية (Bulk Fetching)
   Future<List<WalletModel>> fetchAllWallets() async {
     try {
       debugPrint(
-        '📥 [UserRepository]: جاري جلب جميع المحافظ والمستخدمين من Firestore...',
+        '📥 [UserRepository]: جاري جلب جميع المحافظ والمستخدمين دفعة واحدة...',
       );
+
+      // 👈 جلب البيانات دفعة واحدة بدلاً من الاستعلام المكرر داخل الحلقة
       final walletsSnap = await _db.collection('Wallets').get();
+      final usersSnap = await _db.collection('Users').get();
+      final tracksSnap = await _db.collection('InvestmentTracks').get();
+
+      // خريطة سريعة للوصول للبيانات بالذاكرة In-Memory Lookup
+      final Map<String, Map<String, dynamic>> usersMap = {
+        for (var doc in usersSnap.docs) doc.id: doc.data(),
+      };
+
+      final Map<String, Map<String, dynamic>> tracksMap = {
+        for (var doc in tracksSnap.docs) doc.id: doc.data(),
+      };
+
       List<WalletModel> list = [];
 
       for (var walletDoc in walletsSnap.docs) {
         final walletData = walletDoc.data();
+        final String userId = walletData['userId'] ?? '';
+        final String trackId = walletData['trackId'] ?? '';
 
-        final userDoc = await _db
-            .collection('Users')
-            .doc(walletData['userId'])
-            .get();
-        final userData = userDoc.data() ?? {};
-
-        final trackDoc = await _db
-            .collection('InvestmentTracks')
-            .doc(walletData['trackId'])
-            .get();
-        final trackData = trackDoc.data() ?? {};
+        final userData = usersMap[userId] ?? {};
+        final trackData = tracksMap[trackId] ?? {};
 
         list.add(
           WalletModel(
             id: walletDoc.id,
-            userId: walletData['userId'] ?? '',
+            userId: userId,
             userName: userData['name'] ?? 'مستثمر غير معروف',
             userRole: userData['role'] ?? 'CLIENT',
-            trackId: walletData['trackId'] ?? '',
+            trackId: trackId,
             trackName: trackData['name'] ?? '',
             trackType: trackData['type'] ?? '',
             principalBalance:
@@ -43,10 +50,11 @@ class UserRepository {
             totalProfitsEarned:
                 (walletData['totalProfitsEarned'] as num?)?.toDouble() ?? 0.0,
             phone: userData['phone'] ?? '',
-            isActive: userData['isActive'] ?? true, // 👈 تمرير حالة النشاط هنا
+            isActive: userData['isActive'] ?? true,
           ),
         );
       }
+
       debugPrint('✅ [UserRepository]: تم جلب ${list.length} محفظة بنجاح.');
       return list;
     } catch (e) {
@@ -62,14 +70,15 @@ class UserRepository {
     required double initialPrincipal,
   }) async {
     try {
-      // 1. إنشاء حساب المستخدم أولاً
+      // 1. إنشاء حساب المستخدم
       final userRef = _db.collection('Users').doc();
       await userRef.set({
         'name': name,
         'role': 'CLIENT',
-        'email': 'client_${DateTime.now().millisecondsSinceEpoch}@al-itqan.com',
+        'email':
+            'client_${DateTime.now().millisecondsSinceEpoch}@shami-app.com',
         'phone': '',
-        'isActive': true, // 👈 تحديد أن الحساب الجديد نشط افتراضياً
+        'isActive': true,
         'createdAt': DateTime.now().toIso8601String(),
       });
 
@@ -79,6 +88,10 @@ class UserRepository {
           .where('type', isEqualTo: trackType)
           .limit(1)
           .get();
+
+      if (trackQuery.docs.isEmpty) {
+        throw Exception('مسار الاستثمار المحدد غير موجود.');
+      }
       final trackId = trackQuery.docs.first.id;
 
       // 3. إنشاء المحفظة المقرنة به
@@ -94,6 +107,8 @@ class UserRepository {
       // 4. تدوين الإيداع الأولي كحركة مالية تأسيسية
       await _db.collection('Transactions').add({
         'walletId': walletRef.id,
+        'userName': name,
+        'trackType': trackType,
         'type': 'DEPOSIT',
         'amount': initialPrincipal,
         'description': 'رأس المال التأسيسي الأول للمحفظة',

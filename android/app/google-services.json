@@ -1,10 +1,51 @@
 {
   "project_info": {
     "project_number": "846586333589",
+    "firebase_url": "https://drone-academy-13a5f-default-rtdb.firebaseio.com",
     "project_id": "drone-academy-13a5f",
     "storage_bucket": "drone-academy-13a5f.firebasestorage.app"
   },
   "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:846586333589:android:95f61e3d6b75cad2154e9c",
+        "android_client_info": {
+          "package_name": "com.alitqan.shamicash"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "846586333589-mvo0gpp07jieujr9dpicnopjqnpbrs3n.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.alitqan.shamicash",
+            "certificate_hash": "a384e1cf4aa44abccc3f6639150e3f24256e2519"
+          }
+        },
+        {
+          "client_id": "846586333589-43ociltgmghh6pe3v9v2do9kh1a2cbt3.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA8qPlhyuhjeZNTmYQCiVjIaFvfl8KWnXo"
+        },
+        {
+          "current_key": "AIzaSyCLSJYNZmpC2_KDUJoArGjC4U1YccMAfq0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "846586333589-43ociltgmghh6pe3v9v2do9kh1a2cbt3.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
     {
       "client_info": {
         "mobilesdk_app_id": "1:846586333589:android:49e6105482393c6a154e9c",
@@ -28,10 +69,10 @@
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyCLSJYNZmpC2_KDUJoArGjC4U1YccMAfq0"
+          "current_key": "AIzaSyA8qPlhyuhjeZNTmYQCiVjIaFvfl8KWnXo"
         },
         {
-          "current_key": "AIzaSyA8qPlhyuhjeZNTmYQCiVjIaFvfl8KWnXo"
+          "current_key": "AIzaSyCLSJYNZmpC2_KDUJoArGjC4U1YccMAfq0"
         }
       ],
       "services": {
@@ -60,10 +101,10 @@
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyCLSJYNZmpC2_KDUJoArGjC4U1YccMAfq0"
+          "current_key": "AIzaSyA8qPlhyuhjeZNTmYQCiVjIaFvfl8KWnXo"
         },
         {
-          "current_key": "AIzaSyA8qPlhyuhjeZNTmYQCiVjIaFvfl8KWnXo"
+          "current_key": "AIzaSyCLSJYNZmpC2_KDUJoArGjC4U1YccMAfq0"
         }
       ],
       "services": {
@@ -100,10 +141,10 @@
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyCLSJYNZmpC2_KDUJoArGjC4U1YccMAfq0"
+          "current_key": "AIzaSyA8qPlhyuhjeZNTmYQCiVjIaFvfl8KWnXo"
         },
         {
-          "current_key": "AIzaSyA8qPlhyuhjeZNTmYQCiVjIaFvfl8KWnXo"
+          "current_key": "AIzaSyCLSJYNZmpC2_KDUJoArGjC4U1YccMAfq0"
         }
       ],
       "services": {

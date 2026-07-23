@@ -1,14 +1,13 @@
-import 'dart:convert'; // 👈 استيراد دالة jsonDecode
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:http/http.dart' as http; // 👈 استيراد مكتبة الاتصال بالشبكة
+import 'package:http/http.dart' as http;
 import '../data/repositories/user_repository.dart';
 import '../data/models/wallet_model.dart';
 
 enum WalletSortType { name, principal, newest }
 
 class UserProvider with ChangeNotifier {
-  // 1️⃣ أضف هذه المتغيرات ومسترداتها (Getters) داخل كلاس UserProvider:
   double _loadingProgress = 0.0;
   String _loadingMessage = '';
 
@@ -23,6 +22,7 @@ class UserProvider with ChangeNotifier {
 
   List<WalletModel> _wallets = [];
   bool _isLoading = false;
+  bool _isShamCashLoading = false;
   String? _errorMessage;
   WalletSortType _currentSort = WalletSortType.newest;
 
@@ -41,6 +41,7 @@ class UserProvider with ChangeNotifier {
   }
 
   bool get isLoading => _isLoading;
+  bool get isShamCashLoading => _isShamCashLoading;
   String? get errorMessage => _errorMessage;
   WalletSortType get currentSort => _currentSort;
 
@@ -52,16 +53,15 @@ class UserProvider with ChangeNotifier {
   bool _isFetchingWallets = false;
   bool _isFetchingShamCash = false;
 
-  // 2️⃣ تحديث دالة loadShamCashBalances لتسجيل التقدم:
+  // جلب أرصدة الشام كاش
   Future<void> loadShamCashBalances() async {
     if (_isFetchingShamCash) return;
     _isFetchingShamCash = true;
+    _isShamCashLoading = true;
 
     _loadingProgress = 0.5;
     _loadingMessage = '🔌 جاري الاتصال بسيرفر ShamCash...';
     notifyListeners();
-
-    debugPrint('🔌 [ShamCash]: جاري جلب الأرصدة الحقيقية سحابياً...');
 
     final String apiToken = "89qpjCn71t7XzuKI3rw07x8aO5-St_IMmJTtxmzlbpo";
     final String baseUrl = "https://api.shamcash-api.com/v1";
@@ -79,7 +79,7 @@ class UserProvider with ChangeNotifier {
               'Accept': 'application/json',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 11));
 
       if (accountsResponse.statusCode != 200) {
         throw Exception(
@@ -108,7 +108,7 @@ class UserProvider with ChangeNotifier {
               'Accept': 'application/json',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 11));
 
       if (balancesResponse.statusCode != 200) {
         throw Exception(
@@ -117,7 +117,6 @@ class UserProvider with ChangeNotifier {
       }
 
       final balancesData = jsonDecode(balancesResponse.body);
-      debugPrint('🕵️‍♂️ [ShamCash Raw Data]: ${balancesResponse.body}');
 
       if (balancesData['code'] == "SUCCESS") {
         final List rawBalances = balancesData['data']?['balances'] ?? [];
@@ -143,22 +142,17 @@ class UserProvider with ChangeNotifier {
         _loadingProgress = 1.0;
         _loadingMessage = '✅ اكتمل جلب البيانات بنجاح.';
         notifyListeners();
-        debugPrint('✅ [ShamCash]: تم جلب وتحديث الأرصدة الحقيقية بنجاح.');
       } else {
         throw Exception('رمز الخطأ من بوابة شام كاش: ${balancesData['code']}');
       }
     } catch (e) {
-      debugPrint(
-        '🚨 [ShamCash Error]: حدث خطأ أثناء الاتصال المباشر بـ شام كاش: $e',
-      );
-
       _shamCashInfo = {
         'success': true,
         'merchantName': 'عامر عبدالقادر حلبي (محاكاة الاحتياط)',
         'balances': [
-          {'currency': 'SYP', 'amount': 00000.0},
-          {'currency': 'USD', 'amount': 0000.0},
-          {'currency': 'EUR', 'amount': 0000.0},
+          {'currency': 'SYP', 'amount': 0.0},
+          {'currency': 'USD', 'amount': 0.0},
+          {'currency': 'EUR', 'amount': 0.0},
         ],
       };
       _loadingProgress = 1.0;
@@ -167,23 +161,12 @@ class UserProvider with ChangeNotifier {
       notifyListeners();
     } finally {
       _isFetchingShamCash = false;
+      _isShamCashLoading = false;
+      notifyListeners();
     }
   }
 
-  // أضف هذه الدالة داخل كلاس UserProvider
-  Future<bool> toggleUserStatus(String userId, bool currentStatus) async {
-    try {
-      await _db.collection('Users').doc(userId).update({
-        'isActive': !currentStatus,
-      });
-      await loadWallets(); // إعادة تحميل القائمة للتحديث
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // 3️⃣ تحديث دالة loadWallets لتشمل بداية ونهاية شريط التقدم:
+  // جلب المحافظ باستخدام UserRepository السريع المطور
   Future<void> loadWallets() async {
     if (_isFetchingWallets) return;
     _isFetchingWallets = true;
@@ -196,18 +179,31 @@ class UserProvider with ChangeNotifier {
 
     try {
       _wallets = await _repository.fetchAllWallets();
-
-      _loadingProgress = 0.35;
-      _loadingMessage = '✅ تم جلب المحافظ، جاري الانتقال لـ ShamCash...';
-      notifyListeners();
-
-      await loadShamCashBalances();
+      _loadingProgress = 1.0;
+      _loadingMessage = '✅ تم جلب المحافظ بنجاح.';
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');
     } finally {
       _isLoading = false;
       _isFetchingWallets = false;
       notifyListeners();
+    }
+  }
+
+  // مزامنة كافة البيانات
+  Future<void> refreshAllData() async {
+    await Future.wait([loadWallets(), loadShamCashBalances()]);
+  }
+
+  Future<bool> toggleUserStatus(String userId, bool currentStatus) async {
+    try {
+      await _db.collection('Users').doc(userId).update({
+        'isActive': !currentStatus,
+      });
+      await loadWallets();
+      return true;
+    } catch (e) {
+      return false;
     }
   }
 
@@ -218,7 +214,6 @@ class UserProvider with ChangeNotifier {
     required String newPhone,
     required double? newBonusRate,
   }) async {
-    debugPrint('🔄 [UserProvider]: جاري تحديث بيانات المستثمر ($userId)...');
     try {
       await _db.collection('Users').doc(userId).update({
         'name': newName,
@@ -226,18 +221,181 @@ class UserProvider with ChangeNotifier {
         'phone': newPhone,
         'referralBonusRate': newBonusRate ?? 0.0,
       });
-      debugPrint('✅ [UserProvider]: تم تحديث بيانات المستثمر سحابياً بنجاح.');
-      await loadWallets(); // إعادة تحميل القائمة المحدثة
+      await loadWallets();
       return true;
     } catch (e) {
-      debugPrint('🚨 [UserProvider Error]: تعذر تحديث بيانات المستثمر: $e');
+      return false;
+    }
+  }
+
+  Future<void> fixAndInitializeTracks() async {
+    try {
+      final btcQuery = await _db
+          .collection('InvestmentTracks')
+          .where('type', isEqualTo: 'BITCOIN')
+          .limit(1)
+          .get();
+
+      if (btcQuery.docs.isEmpty) {
+        await _db.collection('InvestmentTracks').add({
+          'name': 'تداول البيتكوين',
+          'type': 'BITCOIN',
+          'myCommissionRate': 0.0,
+        });
+      }
+
+      final orgQuery = await _db
+          .collection('InvestmentTracks')
+          .where('type', isEqualTo: 'ORGANIZATIONS')
+          .limit(1)
+          .get();
+
+      if (orgQuery.docs.isEmpty) {
+        await _db.collection('InvestmentTracks').add({
+          'name': 'استثمار المنظمات',
+          'type': 'ORGANIZATIONS',
+          'myCommissionRate': 0.0,
+        });
+      }
+
+      await loadWallets();
+    } catch (e) {
+      debugPrint('🚨 [Repair Error]: $e');
+    }
+  }
+
+  // إيداع مالي مع حفظ اسم المستثمر والمسار مباشرة لمنع مشكلة الأداء
+  Future<bool> depositToWallet({
+    required String userId,
+    required String trackType,
+    required double amount,
+    required String description,
+  }) async {
+    try {
+      final trackQuery = await _db
+          .collection('InvestmentTracks')
+          .where('type', isEqualTo: trackType)
+          .limit(1)
+          .get();
+
+      if (trackQuery.docs.isEmpty) throw Exception('المسار المحدد غير موجود');
+      final String trackId = trackQuery.docs.first.id;
+
+      // جلب اسم المستثمر المباشر
+      final userDoc = await _db.collection('Users').doc(userId).get();
+      final String userName = userDoc.data()?['name'] ?? 'مستثمر';
+
+      final walletQuery = await _db
+          .collection('Wallets')
+          .where('userId', isEqualTo: userId)
+          .where('trackId', isEqualTo: trackId)
+          .limit(1)
+          .get();
+
+      String walletId;
+
+      if (walletQuery.docs.isNotEmpty) {
+        final walletDoc = walletQuery.docs.first;
+        walletId = walletDoc.id;
+        final double currentBalance =
+            (walletDoc.data()['principalBalance'] as num).toDouble();
+        await walletDoc.reference.update({
+          'principalBalance': currentBalance + amount,
+        });
+      } else {
+        final walletRef = _db.collection('Wallets').doc();
+        walletId = walletRef.id;
+        await walletRef.set({
+          'userId': userId,
+          'trackId': trackId,
+          'principalBalance': amount,
+          'totalProfitsEarned': 0.0,
+          'createdAt': DateTime.now().toIso8601String(),
+        });
+      }
+
+      // إضافة السند المالي محقون بالبيانات المباشرة Denormalized
+      await _db.collection('Transactions').add({
+        'walletId': walletId,
+        'userName': userName,
+        'trackType': trackType,
+        'type': 'DEPOSIT',
+        'amount': amount,
+        'description': description.isEmpty
+            ? 'إيداع عبر بوابة الشامي المالية'
+            : description,
+        'date': DateTime.now().toIso8601String(),
+      });
+
+      await loadWallets();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // سحب مالي مع حفظ البيانات المباشرة
+  Future<bool> withdrawFromWallet({
+    required String userId,
+    required String trackType,
+    required double amount,
+    required String description,
+  }) async {
+    try {
+      final trackQuery = await _db
+          .collection('InvestmentTracks')
+          .where('type', isEqualTo: trackType)
+          .limit(1)
+          .get();
+
+      if (trackQuery.docs.isEmpty) throw Exception('المسار غير موجود');
+      final String trackId = trackQuery.docs.first.id;
+
+      final userDoc = await _db.collection('Users').doc(userId).get();
+      final String userName = userDoc.data()?['name'] ?? 'مستثمر';
+
+      final walletQuery = await _db
+          .collection('Wallets')
+          .where('userId', isEqualTo: userId)
+          .where('trackId', isEqualTo: trackId)
+          .limit(1)
+          .get();
+
+      if (walletQuery.docs.isEmpty) {
+        throw Exception('لا توجد محفظة للمستثمر في هذا المسار');
+      }
+
+      final walletDoc = walletQuery.docs.first;
+      final double currentBalance =
+          (walletDoc.data()['principalBalance'] as num).toDouble();
+
+      if (currentBalance < amount) throw Exception('الرصيد غير كافٍ للسحب');
+
+      await walletDoc.reference.update({
+        'principalBalance': currentBalance - amount,
+      });
+
+      await _db.collection('Transactions').add({
+        'walletId': walletDoc.id,
+        'userName': userName,
+        'trackType': trackType,
+        'type': 'WITHDRAWAL',
+        'amount': amount,
+        'description': description.isEmpty
+            ? 'سحب عبر بوابة الشامي المالية'
+            : description,
+        'date': DateTime.now().toIso8601String(),
+      });
+
+      await loadWallets();
+      return true;
+    } catch (e) {
       return false;
     }
   }
 
   Future<bool> deleteUser(String userId) async {
     try {
-      // حذف المحفظة المرتبطة أولاً وسجل السندات المرتبطة بالمستثمر
       final walletQuery = await _db
           .collection('Wallets')
           .where('userId', isEqualTo: userId)
@@ -245,7 +403,6 @@ class UserProvider with ChangeNotifier {
       final batch = _db.batch();
 
       for (var walletDoc in walletQuery.docs) {
-        // تصفية وحذف السندات المالية المقيدة للمحفظة
         final txsQuery = await _db
             .collection('Transactions')
             .where('walletId', isEqualTo: walletDoc.id)

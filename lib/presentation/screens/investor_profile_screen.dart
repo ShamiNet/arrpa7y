@@ -22,13 +22,17 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   final _amountController = TextEditingController();
   final _descController = TextEditingController();
-  final _shamCashAmountController =
-      TextEditingController(); // متحكم مستقل لمبلغ شام كاش
-  bool _isShamCashLoading = false;
+
+  String _selectedTrack = 'BITCOIN';
+  String _operationType = 'DEPOSIT';
+  bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
+    _selectedTrack = widget.wallet.trackType.isNotEmpty
+        ? widget.wallet.trackType
+        : 'BITCOIN';
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<TransactionProvider>();
       if (provider.transactions.isEmpty) provider.loadTransactions();
@@ -39,7 +43,6 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
   void dispose() {
     _amountController.dispose();
     _descController.dispose();
-    _shamCashAmountController.dispose();
     super.dispose();
   }
 
@@ -48,13 +51,11 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
     final txProvider = Provider.of<TransactionProvider>(context);
     final userProvider = Provider.of<UserProvider>(context);
 
-    // العثور على المحفظة المحدثة من الـ Provider لضمان عرض الأرصدة بدقة بعد كل عملية[cite: 6]
     final currentWallet = userProvider.wallets.firstWhere(
       (w) => w.id == widget.wallet.id,
       orElse: () => widget.wallet,
     );
 
-    // فلترة السندات العامة لتعرض فقط السندات التابعة لهذه المحفظة[cite: 6]
     final clientTransactions = txProvider.transactions
         .where((tx) => tx.walletId == currentWallet.id)
         .toList();
@@ -81,10 +82,8 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
             children: [
               _buildFinancialSummaryCard(currentWallet),
               const SizedBox(height: 12),
-              // كارت إدارة البونص والعمولات التابعة السحابي المباشر
-              _buildReferralBonusCard(context, currentWallet),
-              const SizedBox(height: 12),
-              _buildShamCashPortal(context, currentWallet),
+              // 👈 كارت التحكم الموحد بالنِسب الخاصة بالعميل (بونص + خصم إداري)
+              _RatesManagementCard(wallet: currentWallet),
               const Padding(
                 padding: EdgeInsets.only(top: 18, bottom: 10),
                 child: AppSectionHeader(
@@ -103,13 +102,27 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
           ),
         ),
       ),
-
-      // أزرار الإجراءات السريعة الإدارية التقليدية (إيداع / سحب) بأسفل الشاشة[cite: 6]
-      bottomNavigationBar: _buildActionButtons(context, currentWallet),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+              backgroundColor: AppColors.emerald,
+            ),
+            onPressed: () =>
+                _showUnifiedTransactionBottomSheet(context, currentWallet),
+            icon: const Icon(Icons.swap_horiz_rounded),
+            label: const Text(
+              'إجراء حركة مالية موحدة (إيداع / سحب / توجيه مسار)',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
-  // بطاقة الملخص المالي[cite: 6]
   Widget _buildFinancialSummaryCard(WalletModel wallet) {
     return Container(
       width: double.infinity,
@@ -200,374 +213,12 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
     );
   }
 
-  // كارت إدارة البونص والعمولات التابعة السحابي المباشر لقاعدة Firestore
-  Widget _buildReferralBonusCard(BuildContext context, WalletModel wallet) {
-    final theme = Theme.of(context);
-    final bonusController = TextEditingController();
-    final FirebaseFirestore db = FirebaseFirestore.instance;
-
-    return StreamBuilder<DocumentSnapshot>(
-      stream: db.collection('Users').doc(wallet.userId).snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox.shrink();
-        final userData = snapshot.data!.data() as Map<String, dynamic>? ?? {};
-        final double currentBonus = (userData['referralBonusRate'] ?? 0.0)
-            .toDouble();
-
-        bonusController.text = currentBonus.toString();
-
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      Icons.card_giftcard_rounded,
-                      color: theme.colorScheme.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'إدارة البونص والعمولات التابعة',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
-                const Divider(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: bonusController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'نسبة البونص الممنوحة للعميل (%)',
-                          hintText: 'مثال: 0.25',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    ElevatedButton(
-                      onPressed: () async {
-                        final double? newRate = double.tryParse(
-                          bonusController.text,
-                        );
-                        if (newRate != null && newRate >= 0) {
-                          await db
-                              .collection('Users')
-                              .doc(wallet.userId)
-                              .update({'referralBonusRate': newRate});
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  '✅ تم حفظ وتحديث نسبة البونص للعميل سحابياً.',
-                                ),
-                              ),
-                            );
-                          }
-                        }
-                      },
-                      child: const Text('تحديث النسبة'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // ويدجت بوابة مدفوعات شام كاش الذكية[cite: 6]
-  Widget _buildShamCashPortal(BuildContext context, WalletModel wallet) {
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-    final theme = Theme.of(context);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(9),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.account_balance_wallet_outlined,
-                    color: theme.colorScheme.primary,
-                    size: 21,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'بوابة ShamCash',
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      Text(
-                        wallet.phone.isEmpty
-                            ? 'لا يوجد رقم محفظة مسجل'
-                            : wallet.phone,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 9,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.success.withValues(alpha: .1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text(
-                    'متصل',
-                    style: TextStyle(
-                      color: AppColors.success,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final isCompact = constraints.maxWidth < 570;
-                final field = TextFormField(
-                  controller: _shamCashAmountController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'المبلغ المطلوب',
-                    prefixIcon: Icon(Icons.payments_outlined),
-                  ),
-                );
-                final depositButton = ElevatedButton.icon(
-                  onPressed: _isShamCashLoading
-                      ? null
-                      : () => _requestShamCashDeposit(wallet, userProvider),
-                  icon: _isShamCashLoading
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.add_card_rounded, size: 18),
-                  label: Text(_isShamCashLoading ? 'جارٍ الإرسال' : 'شحن آلي'),
-                );
-                final payoutButton = OutlinedButton.icon(
-                  onPressed: _isShamCashLoading
-                      ? null
-                      : () => _confirmShamCashPayout(wallet),
-                  icon: const Icon(Icons.send_outlined, size: 18),
-                  label: const Text('صرف فوري'),
-                );
-                if (isCompact) {
-                  return Column(
-                    children: [
-                      field,
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(child: depositButton),
-                          const SizedBox(width: 8),
-                          Expanded(child: payoutButton),
-                        ],
-                      ),
-                    ],
-                  );
-                }
-                return Row(
-                  children: [
-                    Expanded(child: field),
-                    const SizedBox(width: 10),
-                    depositButton,
-                    const SizedBox(width: 8),
-                    payoutButton,
-                  ],
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _requestShamCashDeposit(
-    WalletModel wallet,
-    UserProvider userProvider,
-  ) async {
-    final amount = double.tryParse(_shamCashAmountController.text.trim());
-    if (amount == null || amount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('أدخل مبلغاً صالحاً أولاً.')),
-      );
-      return;
-    }
-    setState(() => _isShamCashLoading = true);
-    try {
-      // شحن المحفظة تلقائياً في بيئة الـ Serverless كطلب سحابي وتحديث الأرصدة
-      final FirebaseFirestore db = FirebaseFirestore.instance;
-      final walletRef = db.collection('Wallets').doc(wallet.id);
-
-      await db.runTransaction((transaction) async {
-        final snapshot = await transaction.get(walletRef);
-        if (!snapshot.exists) throw Exception('المحفظة غير موجودة');
-
-        final double currentBalance =
-            (snapshot.data()?['principalBalance'] ?? 0.0).toDouble();
-        transaction.update(walletRef, {
-          'principalBalance': currentBalance + amount,
-        });
-
-        final txRef = db.collection('Transactions').doc();
-        transaction.set(txRef, {
-          'walletId': wallet.id,
-          'type': 'DEPOSIT',
-          'amount': amount,
-          'description':
-              'إيداع آلي ناجح عبر بوابة شام كاش (هاتف: ${wallet.phone})',
-          'date': DateTime.now().toIso8601String(),
-        });
-      });
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('💵 تم شحن المحفظة بنجاح وقيد السند المالي سحابياً.'),
-        ),
-      );
-      _shamCashAmountController.clear();
-      userProvider.loadWallets();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('تعذر معالجة الطلب: $e')));
-    } finally {
-      if (mounted) setState(() => _isShamCashLoading = false);
-    }
-  }
-
-  Future<void> _confirmShamCashPayout(WalletModel wallet) async {
-    final amount = double.tryParse(_shamCashAmountController.text.trim());
-    if (amount == null || amount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('أدخل مبلغاً صالحاً أولاً.')),
-      );
-      return;
-    }
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        icon: const Icon(
-          Icons.warning_amber_rounded,
-          color: AppColors.warning,
-          size: 34,
-        ),
-        title: const Text('تأكيد الصرف المباشر'),
-        content: Text(
-          'سيتم تحويل \$${amount.toStringAsFixed(2)} مباشرة إلى محفظة ${wallet.userName}. هل تريد المتابعة؟',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('إلغاء'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              setState(() => _isShamCashLoading = true);
-              try {
-                final FirebaseFirestore db = FirebaseFirestore.instance;
-                final walletRef = db.collection('Wallets').doc(wallet.id);
-
-                await db.runTransaction((transaction) async {
-                  final snapshot = await transaction.get(walletRef);
-                  if (!snapshot.exists) throw Exception('المحفظة غير موجودة');
-
-                  final double currentBalance =
-                      (snapshot.data()?['principalBalance'] ?? 0.0).toDouble();
-                  if (currentBalance < amount)
-                    throw Exception('رصيد المحفظة غير كافٍ للصرف.');
-
-                  transaction.update(walletRef, {
-                    'principalBalance': currentBalance - amount,
-                  });
-
-                  final txRef = db.collection('Transactions').doc();
-                  transaction.set(txRef, {
-                    'walletId': wallet.id,
-                    'type': 'WITHDRAW',
-                    'amount': amount,
-                    'description':
-                        'صرف حوالة فوري عبر بوابة شام كاش (هاتف: ${wallet.phone})',
-                    'date': DateTime.now().toIso8601String(),
-                  });
-                });
-
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      '✅ تم صرف الحوالة الفورية وتوثيق السحب سحابياً.',
-                    ),
-                  ),
-                );
-                _shamCashAmountController.clear();
-                context.read<UserProvider>().loadWallets();
-              } catch (e) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('فشل الصرف: $e')));
-              } finally {
-                if (mounted) setState(() => _isShamCashLoading = false);
-              }
-            },
-            child: const Text('تأكيد التحويل'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // قائمة المعاملات المفلترة لعميل محدد[cite: 6]
   Widget _buildClientTxList(
     List transactions,
     bool isLoading,
     WalletModel currentWallet,
   ) {
-    if (isLoading) {
-      return const AppStateView(kind: AppStateKind.loading);
-    }
+    if (isLoading) return const AppStateView(kind: AppStateKind.loading);
     if (transactions.isEmpty) {
       return const AppStateView(
         kind: AppStateKind.empty,
@@ -602,10 +253,8 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
 ----------------------------------
 💼 *رأس المال الحالي للمحفظة:* \$${currentWallet.principalBalance.toStringAsFixed(2)}
 
-_تم توليد هذا السند تلقائياً عبر نظام الشامي نت لإدارة الأرباح والمحافظ الحية._
+_تم توليد هذا السند تلقائياً عبر نظام الشامي المالي._
 ''';
-
-            // تعديل دالة الاستدعاء لتتوافق مع تحديثات share_plus الأخيرة[cite: 3]
             await Share.share(
               receiptText,
               subject: 'سند مالي - ${currentWallet.userName}',
@@ -616,170 +265,428 @@ _تم توليد هذا السند تلقائياً عبر نظام الشامي
     );
   }
 
-  // أزرار الإيداع والسحب في الأسفل[cite: 6]
-  Widget _buildActionButtons(BuildContext context, WalletModel wallet) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.success,
-                ),
-                onPressed: () =>
-                    _showTransactionBottomSheet(context, wallet, 'DEPOSIT'),
-                icon: const Icon(Icons.add_circle_outline),
-                label: const Text(
-                  'إيداع أموال',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+  void _showUnifiedTransactionBottomSheet(
+    BuildContext context,
+    WalletModel wallet,
+  ) {
+    _amountController.clear();
+    _descController.clear();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(dialogCtx).viewInsets.bottom,
+                top: 20,
+                left: 18,
+                right: 18,
+              ),
+              child: SingleChildScrollView(
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'إدارة الحركة المالية لـ ${wallet.userName}',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      SegmentedButton<String>(
+                        segments: const [
+                          ButtonSegment(
+                            value: 'DEPOSIT',
+                            label: Text('إيداع شحن'),
+                            icon: Icon(Icons.add_circle_outline_rounded),
+                          ),
+                          ButtonSegment(
+                            value: 'WITHDRAWAL',
+                            label: Text('سحب رصيد'),
+                            icon: Icon(Icons.remove_circle_outline_rounded),
+                          ),
+                        ],
+                        selected: {_operationType},
+                        onSelectionChanged: (val) {
+                          setModalState(() => _operationType = val.first);
+                        },
+                      ),
+                      const SizedBox(height: 14),
+
+                      DropdownButtonFormField<String>(
+                        value: _selectedTrack,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'توجيه الميزانية للمسار',
+                          prefixIcon: Icon(Icons.show_chart_rounded),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'BITCOIN',
+                            child: Text('تداول البيتكوين / العملات'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'ORGANIZATIONS',
+                            child: Text('استثمار المنظمات (أبو جميل)'),
+                          ),
+                        ],
+                        onChanged: (val) =>
+                            setModalState(() => _selectedTrack = val!),
+                      ),
+                      const SizedBox(height: 12),
+
+                      TextFormField(
+                        controller: _amountController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'المبلغ المستهدف (\$)',
+                          prefixIcon: Icon(Icons.attach_money_rounded),
+                        ),
+                        validator: (val) {
+                          if (val == null || val.trim().isEmpty)
+                            return 'الرجاء إدخال المبلغ';
+                          final num = double.tryParse(val.trim());
+                          if (num == null || num <= 0) return 'مبلغ غير صالح';
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+
+                      TextFormField(
+                        controller: _descController,
+                        decoration: const InputDecoration(
+                          labelText: 'ملاحظات / بيان السند (اختياري)',
+                          prefixIcon: Icon(Icons.notes_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _operationType == 'DEPOSIT'
+                                ? AppColors.success
+                                : AppColors.danger,
+                          ),
+                          onPressed: _isSubmitting
+                              ? null
+                              : () async {
+                                  if (_formKey.currentState!.validate()) {
+                                    setModalState(() => _isSubmitting = true);
+                                    final userProvider =
+                                        Provider.of<UserProvider>(
+                                          context,
+                                          listen: false,
+                                        );
+
+                                    final amount = double.parse(
+                                      _amountController.text.trim(),
+                                    );
+                                    final desc = _descController.text.trim();
+                                    bool success = false;
+
+                                    if (_operationType == 'DEPOSIT') {
+                                      success = await userProvider
+                                          .depositToWallet(
+                                            userId: wallet.userId,
+                                            trackType: _selectedTrack,
+                                            amount: amount,
+                                            description: desc,
+                                          );
+                                    } else {
+                                      success = await userProvider
+                                          .withdrawFromWallet(
+                                            userId: wallet.userId,
+                                            trackType: _selectedTrack,
+                                            amount: amount,
+                                            description: desc,
+                                          );
+                                    }
+
+                                    if (!mounted) return;
+                                    setModalState(() => _isSubmitting = false);
+
+                                    if (success) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            '🎉 تم قيد عملية ${_operationType == 'DEPOSIT' ? "الإيداع" : "السحب"} وتحديث المحفظة بنجاح!',
+                                          ),
+                                        ),
+                                      );
+                                      if (ctx.mounted) Navigator.pop(ctx);
+                                    } else {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'تعذر إتمام العملية، يرجى التأكد من رصيد المحفظة.',
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                          icon: _isSubmitting
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Icon(
+                                  _operationType == 'DEPOSIT'
+                                      ? Icons.download_rounded
+                                      : Icons.upload_rounded,
+                                ),
+                          label: Text(
+                            _isSubmitting
+                                ? 'جارٍ المعالجة والقيد...'
+                                : (_operationType == 'DEPOSIT'
+                                      ? 'تأكيد وشحن الحساب'
+                                      : 'تأكيد وسحب المبلغ'),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.danger,
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// 👈 ويدجت إدارة النسب الخاصة بالعميل (بونص الإحالة + الخصم الإداري الفردي)
+class _RatesManagementCard extends StatefulWidget {
+  final WalletModel wallet;
+
+  const _RatesManagementCard({required this.wallet});
+
+  @override
+  State<_RatesManagementCard> createState() => _RatesManagementCardState();
+}
+
+class _RatesManagementCardState extends State<_RatesManagementCard> {
+  final _bonusController = TextEditingController();
+  final _deductionController = TextEditingController();
+
+  bool _isLoaded = false;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserRates();
+  }
+
+  Future<void> _loadUserRates() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('Users')
+          .doc(widget.wallet.userId)
+          .get();
+
+      if (doc.exists && mounted) {
+        final data = doc.data() ?? {};
+        _bonusController.text = (data['referralBonusRate'] ?? 0.0).toString();
+        _deductionController.text = (data['customDeductionRate'] ?? 0.0)
+            .toString();
+        setState(() => _isLoaded = true);
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoaded = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _bonusController.dispose();
+    _deductionController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    if (!_isLoaded) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(20.0),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.tune_rounded, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                const Text(
+                  'إدارة النسب الخاصة بالعميل',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                 ),
-                onPressed: () =>
-                    _showTransactionBottomSheet(context, wallet, 'WITHDRAW'),
-                icon: const Icon(Icons.remove_circle_outline),
-                label: const Text(
-                  'سحب أموال',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+              ],
+            ),
+            const Divider(height: 20),
+            Row(
+              children: [
+                // 1. نسبة البونص
+                Expanded(
+                  child: TextFormField(
+                    controller: _bonusController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'بونص الإحالة (%)',
+                      hintText: 'مثال: 0.25',
+                      prefixIcon: Icon(Icons.content_cut_rounded, size: 18),
+
+                      // 1. تصغير حجم خط العنوان ليتناسب مع المساحة
+                      labelStyle: TextStyle(fontSize: 13),
+
+                      // 2. التحكم بالحجم عند صعود النص للأعلى (مهم للحقول الصغيرة)
+                      floatingLabelStyle: TextStyle(fontSize: 12),
+
+                      // 3. إضافة مساحات داخلية تمنع النص من الاصطدام بالحواف
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                // 2. نسبة الخصم الفردي
+                Expanded(
+                  child: TextFormField(
+                    controller: _deductionController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'الخصم الخاص (%)',
+                      hintText: 'مثال: 2.0',
+                      prefixIcon: Icon(Icons.content_cut_rounded, size: 18),
+
+                      // 1. تصغير حجم خط العنوان ليتناسب مع المساحة
+                      labelStyle: TextStyle(fontSize: 13),
+
+                      // 2. التحكم بالحجم عند صعود النص للأعلى (مهم للحقول الصغيرة)
+                      floatingLabelStyle: TextStyle(fontSize: 12),
+
+                      // 3. إضافة مساحات داخلية تمنع النص من الاصطدام بالحواف
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isSaving
+                    ? null
+                    : () async {
+                        final double? bonus = double.tryParse(
+                          _bonusController.text.trim(),
+                        );
+                        final double? deduction = double.tryParse(
+                          _deductionController.text.trim(),
+                        );
+
+                        if (bonus == null || deduction == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('الرجاء إدخال أرقام صحيحة'),
+                            ),
+                          );
+                          return;
+                        }
+
+                        setState(() => _isSaving = true);
+                        try {
+                          await FirebaseFirestore.instance
+                              .collection('Users')
+                              .doc(widget.wallet.userId)
+                              .update({
+                                'referralBonusRate': bonus,
+                                'customDeductionRate': deduction,
+                              });
+
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  '✅ تم حفظ وتحديث النسب المخصصة للعميل سحابياً.',
+                                ),
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('تعذر الحفظ: $e')),
+                            );
+                          }
+                        } finally {
+                          if (mounted) setState(() => _isSaving = false);
+                        }
+                      },
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.save_rounded, size: 18),
+                label: Text(
+                  _isSaving ? 'جارٍ الحفظ...' : 'حفظ وتحديث النسب الفردية',
                 ),
               ),
             ),
           ],
         ),
       ),
-    );
-  }
-
-  // نافذة إدخال الحركة المالية السريعة[cite: 6]
-  void _showTransactionBottomSheet(
-    BuildContext context,
-    WalletModel wallet,
-    String type,
-  ) {
-    _amountController.clear();
-    _descController.clear();
-    final isDeposit = type == 'DEPOSIT';
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(20),
-        ),
-      ),
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom,
-            top: 20,
-            left: 16,
-            right: 16,
-          ),
-          child: SingleChildScrollView(
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    isDeposit ? 'قيد سند إيداع جديد' : 'قيد سند سحب مالي',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _amountController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'المبلغ المطلوب (\$)',
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (val) {
-                      if (val == null || val.trim().isEmpty) {
-                        return 'الرجاء إدخال المبلغ';
-                      }
-                      if (double.tryParse(val) == null ||
-                          double.parse(val) <= 0) {
-                        return 'مبلغ غير صالح';
-                      }
-                      if (!isDeposit &&
-                          double.parse(val) > wallet.principalBalance) {
-                        return 'رصيد المحفظة التأسيسي غير كافٍ';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _descController,
-                    decoration: const InputDecoration(
-                      labelText: 'بيان العملية (اختياري)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isDeposit
-                            ? AppColors.success
-                            : AppColors.danger,
-                      ),
-                      onPressed: () async {
-                        if (_formKey.currentState!.validate()) {
-                          final success =
-                              await Provider.of<TransactionProvider>(
-                                context,
-                                listen: false,
-                              ).executeTransaction(
-                                walletId: wallet.id,
-                                type: type,
-                                amount: double.parse(_amountController.text),
-                                description: _descController.text.trim(),
-                              );
-
-                          if (!mounted) return;
-                          if (success) {
-                            Provider.of<UserProvider>(
-                              context,
-                              listen: false,
-                            ).loadWallets();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('تم تسجيل وتوثيق السند بنجاح.'),
-                              ),
-                            );
-                            if (ctx.mounted) Navigator.pop(ctx);
-                          }
-                        }
-                      },
-                      child: const Text(
-                        'تأكيد وترحيل السند المالي',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }

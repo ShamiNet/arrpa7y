@@ -1,3 +1,4 @@
+import 'package:arrpa7y/presentation/screens/sham_cash_gateway_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -161,6 +162,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   crossAxisSpacing: 12,
                   childAspectRatio: 1.3,
                   children: [
+                    _buildActionTile(
+                      context,
+                      title: 'بوابة الشامي المالية',
+                      subtitle: 'إيداع وسحب وتوجيه الرصيد',
+                      icon: Icons.account_balance_wallet_rounded,
+                      color: AppColors.emerald,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ShamCashGatewayScreen(),
+                          ),
+                        );
+                      },
+                    ),
                     _buildActionTile(
                       context,
                       title: 'المساعد الذكي (AI)',

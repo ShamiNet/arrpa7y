@@ -47,7 +47,39 @@ class TransactionProvider with ChangeNotifier {
         amount: amount,
         description: description,
       );
-      await loadTransactions(); // تحديث كشف الحساب فوراً
+      await loadTransactions();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // 👈 حذف حركة مالية منفردة
+  Future<bool> deleteTransaction(String transactionId) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      await _repository.deleteTransaction(transactionId);
+      await loadTransactions();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // 👈 مسح كافة الحركات والسندات
+  Future<bool> clearAllTransactions() async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      await _repository.clearAllTransactions();
+      await loadTransactions();
       return true;
     } catch (e) {
       _errorMessage = e.toString();

@@ -1,167 +1,193 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../data/models/profit_simulation_model.dart'; // ستحتاج لتحديث الـ Model لاحقاً لعرض البنود المنفصلة
+import '../data/repositories/profit_repository.dart';
 
 class ProfitProvider with ChangeNotifier {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final ProfitRepository _repository = ProfitRepository();
+
   bool _isLoading = false;
   String? _errorMessage;
 
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
-  // هيكل مرن لحفظ تفاصيل أرباح المدير لعرضها في الشاشة
   Map<String, double> _managerProfitStats = {
     'trackBaseProfit': 0.0,
     'managerExtraEarned': 0.0,
+    'totalDeductionsEarned': 0.0,
     'totalDistributedBonus': 0.0,
     'managerNetProfit': 0.0,
   };
   Map<String, double> get managerProfitStats => _managerProfitStats;
 
+  /// 🎯 حساب محاكاة وتوزيع الأرباح والخصومات
   Future<void> distributeProfitsWithBonus({
     required String trackType,
-    required double
-    baseProfitRate, // نسبة الربح الأساسية للجميع (مثال: 0.05 لـ 5%)
-    required double
-    managerExtraRate, // النسبة الإضافية المتغيرة للمدير (مثال: 0.005 لـ 0.5%)
+    required double baseProfitRate,
+    double managerExtraRate = 0.0,
+    double managerDeductionRate = 0.0,
+    required String targetUserId,
+    bool isSimulation = false, // 👈 لمنع الحفظ السحابي أثناء المحاكاة
   }) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      // 1. جلب المسار وتحديث نسبته الإضافية المتغيرة لهذا الشهر
+      // 1. جلب بيانات المسار
       final trackQuery = await _db
           .collection('InvestmentTracks')
           .where('type', isEqualTo: trackType)
           .limit(1)
           .get();
 
-      if (trackQuery.docs.isEmpty)
+      if (trackQuery.docs.isEmpty) {
         throw Exception('المسار الاستثماري غير موجود.');
+      }
       final trackDoc = trackQuery.docs.first;
 
-      // حفظ النسبة المتغيرة في قاعدة البيانات لتوثيقها
-      await trackDoc.reference.update({'additionalRate': managerExtraRate});
+      if (!isSimulation) {
+        await trackDoc.reference.update({'additionalRate': managerExtraRate});
+      }
 
-      // 2. جلب جميع محافظ هذا المسار
+      // 2. جلب محافظ المسار
       final walletsQuery = await _db
           .collection('Wallets')
           .where('trackId', isEqualTo: trackDoc.id)
           .get();
 
       double totalTrackPrincipal = 0.0;
-      double totalBaseDistributed = 0.0;
       double totalBonusDistributed = 0.0;
       double totalManagerExtraEarned = 0.0;
+      double totalDeductionsEarned = 0.0;
 
-      WriteBatch batch = _db.batch();
-      final String executedAtStr = DateTime.now().toIso8601String();
+      Map<String, double> walletProfitsToAdd = {};
+      Map<String, double> walletBaseNetProfits = {};
+      Map<String, double> walletBonusProfits = {};
+      Map<String, double> walletBonusRates = {};
 
-      // 3. معالجة كل محفظة ومستثمر
+      String? targetAdminWalletId;
+
+      // 3. حساب الأرباح والعمولات والخصومات بالذاكرة
       for (var walletDoc in walletsQuery.docs) {
         final walletData = walletDoc.data();
         final double principal = (walletData['principalBalance'] as num)
             .toDouble();
         totalTrackPrincipal += principal;
 
-        final userDoc = await _db
-            .collection('Users')
-            .doc(walletData['userId'])
-            .get();
+        final String walletUserId = walletData['userId'] ?? '';
+
+        if (walletUserId == targetUserId) {
+          targetAdminWalletId = walletDoc.id;
+        }
+
+        final userDoc = await _db.collection('Users').doc(walletUserId).get();
         final userData = userDoc.data() ?? {};
-        final String role = userData['role'] ?? 'CLIENT';
-        final String name = userData['name'] ?? 'مستثمر';
 
-        // أ) حساب الربح الأساسي للمستثمر (5%)
-        double baseProfit = principal * baseProfitRate;
+        double appliedDeductionRate = managerDeductionRate;
+        if (userData['customDeductionRate'] != null) {
+          appliedDeductionRate =
+              (userData['customDeductionRate'] as num).toDouble() / 100;
+        }
 
-        // ب) حساب البونص الإضافي المخصص لهذا العميل من نسبة المدير (مثلاً 0.25%)
+        double grossBaseProfit = principal * baseProfitRate;
+        double managerDeduction = principal * appliedDeductionRate;
+        double netBaseProfit = grossBaseProfit - managerDeduction;
+
         double bonusRate = 0.0;
         if (userData['referralBonusRate'] != null) {
-          bonusRate =
-              (userData['referralBonusRate'] as num).toDouble() /
-              100; // تحويل 0.25 إلى 0.0025
+          bonusRate = (userData['referralBonusRate'] as num).toDouble() / 100;
         }
         double bonusProfit = principal * bonusRate;
 
-        // ج) حساب النسبة الإضافية الإجمالية التي تدرها هذه المحفظة للمدير (0.5%)
         double managerExtraFromThisWallet = principal * managerExtraRate;
         totalManagerExtraEarned += managerExtraFromThisWallet;
+        totalDeductionsEarned += managerDeduction;
+        totalBonusDistributed += bonusProfit;
 
-        // د) القيد السحابي وتحديث الأرصدة في المحفظة
-        double totalNewProfits = baseProfit + bonusProfit;
-        double currentEarned =
-            (walletData['totalProfitsEarned'] as num?)?.toDouble() ?? 0.0;
-
-        batch.update(walletDoc.reference, {
-          'totalProfitsEarned': currentEarned + totalNewProfits,
-        });
-
-        // هـ) قيد المستند المالي كبندين منفصلين تماماً في السندات السحابية
-
-        // 1. سند الربح الأساسي
-        final baseTxRef = _db.collection('Transactions').doc();
-        batch.set(baseTxRef, {
-          'walletId': walletDoc.id,
-          'type': 'PROFIT',
-          'amount': baseProfit,
-          'description':
-              'أرباح استثمار أساسية بنسبة ${(baseProfitRate * 100).toStringAsFixed(1)}%',
-          'date': executedAtStr,
-        });
-
-        // 2. سند بونص الإحالة المنفصل (إذا كان له بونص مخصص أكبر من 0)
-        if (bonusProfit > 0) {
-          totalBonusDistributed += bonusProfit;
-          final bonusTxRef = _db.collection('Transactions').doc();
-          batch.set(bonusTxRef, {
-            'walletId': walletDoc.id,
-            'type': 'BONUS', // نوع جديد للسندات
-            'amount': bonusProfit,
-            'description':
-                'بونص إحالة إضافي بنسبة ${(bonusRate * 100).toStringAsFixed(2)}%',
-            'date': executedAtStr,
-          });
-        }
-
-        if (role != 'ADMIN') {
-          totalBaseDistributed += baseProfit;
-        }
+        walletBaseNetProfits[walletDoc.id] = netBaseProfit;
+        walletBonusProfits[walletDoc.id] = bonusProfit;
+        walletBonusRates[walletDoc.id] = bonusRate;
+        walletProfitsToAdd[walletDoc.id] = netBaseProfit + bonusProfit;
       }
 
-      // 4. احتساب إحصائيات المدير وحفظها لعرضها في الشاشة
+      // 4. احتساب الصافي المتبقي لعمولة وخصومات المدير
+      double managerNetProfit =
+          (totalManagerExtraEarned + totalDeductionsEarned) -
+          totalBonusDistributed;
+
+      // 5. حفظ الإحصائيات لعرضها بالواجهة
       _managerProfitStats = {
-        'trackBaseProfit':
-            totalTrackPrincipal * baseProfitRate, // إجمالي أرباح المسار 5%
-        'managerExtraEarned':
-            totalManagerExtraEarned, // إجمالي الـ 0.5% التي حصلت عليها
-        'totalDistributedBonus': totalBonusDistributed, // كم وزعت منها (البونص)
-        'managerNetProfit':
-            totalManagerExtraEarned - totalBonusDistributed, // المتبقي لك صافي
+        'trackBaseProfit': totalTrackPrincipal * baseProfitRate,
+        'managerExtraEarned': totalManagerExtraEarned,
+        'totalDeductionsEarned': totalDeductionsEarned,
+        'totalDistributedBonus': totalBonusDistributed,
+        'managerNetProfit': managerNetProfit,
       };
 
-      // 5. حفظ هذه العملية الإدارية في سجل التوزيع السحابي
-      final logRef = _db.collection('ProfitDistributionLogs').doc();
-      batch.set(logRef, {
-        'trackId': trackDoc.id,
-        'baseProfitRate': baseProfitRate,
-        'managerExtraRate': managerExtraRate,
-        'totalTrackPrincipal': totalTrackPrincipal,
-        'managerExtraEarned': totalManagerExtraEarned,
-        'totalDistributedBonus': totalBonusDistributed,
-        'managerNetProfit': totalManagerExtraEarned - totalBonusDistributed,
-        'executedAt': executedAtStr,
-      });
+      // إذا كانت العملية محاكاة افتراضية، ننهي الدالة هنا ولا نعدل قاعدة البيانات
+      if (isSimulation) {
+        _isLoading = false;
+        notifyListeners();
+        return;
+      }
 
-      await batch.commit();
+      // إضافة صافي أرباح المدير للحساب المختار
+      if (managerNetProfit > 0 && targetAdminWalletId != null) {
+        walletProfitsToAdd[targetAdminWalletId] =
+            (walletProfitsToAdd[targetAdminWalletId] ?? 0.0) + managerNetProfit;
+      }
+
+      // 6. استدعاء الـ Repository المطور لإجراء الضخ الفعلي في الفايربيس
+      await _repository.executeProfitDistribution(
+        trackDocId: trackDoc.id,
+        trackType: trackType,
+        baseProfitRate: baseProfitRate,
+        managerExtraRate: managerExtraRate,
+        managerDeductionRate: managerDeductionRate,
+        targetUserId: targetUserId,
+        walletProfitsToAdd: walletProfitsToAdd,
+        walletBaseNetProfits: walletBaseNetProfits,
+        walletBonusProfits: walletBonusProfits,
+        walletBonusRates: walletBonusRates,
+        walletDocs: walletsQuery.docs,
+      );
+
       _isLoading = false;
       notifyListeners();
     } catch (e) {
       _isLoading = false;
       _errorMessage = e.toString();
       notifyListeners();
+    }
+  }
+
+  /// 🔄 مسح وتصفير كافة الأرباح المسجلة مسبقاً عبر الـ Repository
+  Future<bool> resetAllProfits() async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await _repository.resetAllProfitsData();
+
+      _managerProfitStats = {
+        'trackBaseProfit': 0.0,
+        'managerExtraEarned': 0.0,
+        'totalDeductionsEarned': 0.0,
+        'totalDistributedBonus': 0.0,
+        'managerNetProfit': 0.0,
+      };
+
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
     }
   }
 }

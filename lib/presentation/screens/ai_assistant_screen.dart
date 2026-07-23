@@ -1,3 +1,5 @@
+import 'package:arrpa7y/logic/user_provider.dart';
+import 'package:arrpa7y/presentation/screens/saved_ai_reports_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -47,8 +49,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     final text = _promptController.text.trim();
     if (text.isEmpty) return;
 
+    // 👈 جلب المحافظ الحالية وتغذيتها للذكاء الاصطناعي
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+
     _promptController.clear();
-    aiProvider.sendPrompt(text);
+    aiProvider.sendPrompt(text, userProvider.wallets);
     _scrollToBottom();
   }
 
@@ -139,6 +144,19 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           ],
         ),
         actions: [
+          // 📌 زر الانتقال لصفحة المحفوظات
+          IconButton(
+            tooltip: 'التقارير المحفوظة',
+            icon: const Icon(Icons.bookmarks_rounded, color: AppColors.gold),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const SavedAiReportsScreen(),
+                ),
+              );
+            },
+          ),
           IconButton(
             tooltip: 'تصفية المحادثة',
             icon: const Icon(Icons.cleaning_services_rounded),
@@ -158,7 +176,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     itemCount: aiProvider.messages.length,
                     itemBuilder: (context, index) {
                       final msg = aiProvider.messages[index];
-                      return _buildMessageBubble(msg, theme);
+                      return _buildMessageBubble(msg, theme, aiProvider);
                     },
                   ),
           ),
@@ -219,7 +237,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'يمكنك مطالبتي بإجراء حسابات، تقديم كشوفات، أو تحليل بيانات جميع المستثمرين والمحافظ.',
+            'يمكنك مطالبتي بإجراء حسابات، تقديم كشوفات، أو تحليل بيانات جميع المستثمرين والمافظ.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
@@ -256,7 +274,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     );
   }
 
-  Widget _buildMessageBubble(AiChatMessage msg, ThemeData theme) {
+  Widget _buildMessageBubble(
+    AiChatMessage msg,
+    ThemeData theme,
+    AiProvider aiProvider,
+  ) {
     final isUser = msg.isUser;
 
     return Align(
@@ -324,12 +346,63 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                 const Spacer(),
 
                 if (!isUser) ...[
+                  // 📌 زر حفظ التقرير
+                  InkWell(
+                    onTap: () async {
+                      final int currentIndex = aiProvider.messages.indexOf(msg);
+                      String promptText = 'تقرير تحليلي';
+                      if (currentIndex > 0 &&
+                          aiProvider.messages[currentIndex - 1].isUser) {
+                        promptText = aiProvider.messages[currentIndex - 1].text;
+                      }
+
+                      final success = await aiProvider.saveAiReport(
+                        prompt: promptText,
+                        replyText: msg.text,
+                      );
+
+                      if (context.mounted && success) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              '🎉 تم حفظ التقرير بنجاح في الأرشيف!',
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.bookmark_add_rounded,
+                            size: 13,
+                            color: AppColors.gold,
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            'حفظ',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.gold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+
+                  // 📋 زر النسخ للواتساب
                   InkWell(
                     onTap: () => _copyToClipboard(msg.text),
                     borderRadius: BorderRadius.circular(12),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
+                        horizontal: 6,
                         vertical: 2,
                       ),
                       child: Row(
@@ -342,7 +415,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            'نسخ للواتساب',
+                            'نسخ',
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.bold,

@@ -15,25 +15,20 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
-  final _passwordController = TextEditingController();
   final _principalController = TextEditingController();
 
   String _selectedTrack = 'BITCOIN';
-  bool _obscurePassword = true;
 
   final List<Map<String, String>> _tracks = [
     {'value': 'BITCOIN', 'label': 'تداول البتكوين'},
-    {'value': 'ORGANIZATIONS', 'label': 'استثمار المنظمات (أبو جميل)'},
+    {'value': 'ORGANIZATIONS', 'label': 'استثمار المنظمات'},
   ];
 
   @override
   void dispose() {
     _nameController.dispose();
-    _emailController.dispose();
     _phoneController.dispose();
-    _passwordController.dispose();
     _principalController.dispose();
     super.dispose();
   }
@@ -84,7 +79,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                'سيتم إنشاء حساب مستخدم وفتح محفظة استثمارية له في قاعدة البيانات مباشرة.',
+                                'سيتم إنشاء بيانات الدعم والمحفظة الاستثمارية تلقائياً وآلياً عبر النظام.',
                                 textAlign: TextAlign.center,
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: theme.colorScheme.onSurfaceVariant,
@@ -92,7 +87,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               ),
                               const SizedBox(height: 24),
 
-                              // الاسم الكامل
+                              // 1. الاسم الكامل
                               TextFormField(
                                 controller: _nameController,
                                 decoration: const InputDecoration(
@@ -108,71 +103,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               ),
                               const SizedBox(height: 12),
 
-                              // البريد الإلكتروني
-                              TextFormField(
-                                controller: _emailController,
-                                keyboardType: TextInputType.emailAddress,
-                                textDirection: TextDirection.ltr,
-                                decoration: const InputDecoration(
-                                  labelText: 'البريد الإلكتروني للمستثمر',
-                                  prefixIcon: Icon(Icons.mail_outline_rounded),
-                                  hintText: 'example@mail.com',
-                                ),
-                                validator: (val) =>
-                                    val == null || val.trim().isEmpty
-                                    ? 'الرجاء إدخال البريد الإلكتروني'
-                                    : null,
-                              ),
-                              const SizedBox(height: 12),
-
-                              // رقم الهاتف
+                              // 2. حساب شام كاش / الهاتف
                               TextFormField(
                                 controller: _phoneController,
                                 keyboardType: TextInputType.phone,
                                 textDirection: TextDirection.ltr,
                                 decoration: const InputDecoration(
-                                  labelText: 'رقم محفظة شام كاش / الهاتف',
-                                  prefixIcon: Icon(Icons.phone_outlined),
+                                  labelText: 'حساب شام كاش / رقم الهاتف',
+                                  prefixIcon: Icon(
+                                    Icons.account_balance_wallet_outlined,
+                                  ),
                                   hintText: '09xxxxxxxx',
                                 ),
                                 validator: (val) =>
                                     val == null || val.trim().isEmpty
-                                    ? 'الرجاء إدخال رقم الهاتف'
+                                    ? 'الرجاء إدخال حساب شام كاش'
                                     : null,
                               ),
                               const SizedBox(height: 12),
 
-                              // كلمة المرور
-                              TextFormField(
-                                controller: _passwordController,
-                                obscureText: _obscurePassword,
-                                decoration: InputDecoration(
-                                  labelText: 'كلمة مرور الحساب',
-                                  prefixIcon: const Icon(
-                                    Icons.lock_outline_rounded,
-                                  ),
-                                  suffixIcon: IconButton(
-                                    icon: Icon(
-                                      _obscurePassword
-                                          ? Icons.visibility_off_outlined
-                                          : Icons.visibility_outlined,
-                                    ),
-                                    onPressed: () => setState(
-                                      () =>
-                                          _obscurePassword = !_obscurePassword,
-                                    ),
-                                  ),
-                                ),
-                                validator: (val) =>
-                                    val == null || val.trim().length < 6
-                                    ? 'كلمة المرور يجب أن تكون 6 خانات على الأقل'
-                                    : null,
-                              ),
-                              const SizedBox(height: 16),
-                              const Divider(),
-                              const SizedBox(height: 16),
-
-                              // اختيار مسار الاستثمار لتأسيس المحفظة
+                              // 3. مسار الاستثمار
                               DropdownButtonFormField<String>(
                                 value: _selectedTrack,
                                 decoration: const InputDecoration(
@@ -190,7 +140,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               ),
                               const SizedBox(height: 12),
 
-                              // رأس المال الأولي
+                              // 4. رأس المال الأولي
                               TextFormField(
                                 controller: _principalController,
                                 keyboardType:
@@ -198,7 +148,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       decimal: true,
                                     ),
                                 decoration: const InputDecoration(
-                                  labelText: 'رأس المال الأولي للشحن (\$)',
+                                  labelText: 'رأس المال الأولي (\$)',
                                   prefixIcon: Icon(
                                     Icons.monetization_on_outlined,
                                   ),
@@ -232,7 +182,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                           color: Colors.white,
                                         ),
                                       )
-                                    : const Text('تأسيس وقيد الحساب سحابياً'),
+                                    : const Text('تأسيس وقيد الحساب آلياً'),
                               ),
                             ],
                           ),
@@ -257,8 +207,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     final success = await authProvider.signUp(
       name: _nameController.text.trim(),
-      email: _emailController.text.trim(),
-      password: _passwordController.text,
       phone: _phoneController.text.trim(),
       trackType: _selectedTrack,
       initialPrincipal: double.parse(_principalController.text.trim()),
@@ -267,14 +215,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!mounted) return;
 
     if (success) {
-      // تحديث قائمة المحافظ محلياً فور النجاح
       userProvider.loadWallets();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('🎉 تم إنشاء حساب المستثمر وقيد محفظته بنجاح!'),
         ),
       );
-      Navigator.pop(context); // العودة للشاشة السابقة
+      Navigator.pop(context);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

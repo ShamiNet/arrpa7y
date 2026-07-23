@@ -1,7 +1,9 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../logic/profit_provider.dart';
 import '../../data/models/profit_simulation_model.dart';
+import '../../data/models/wallet_model.dart';
 import '../../logic/user_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../widgets/app_ui.dart';
@@ -15,12 +17,12 @@ class ProfitSimulationScreen extends StatefulWidget {
 
 class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _baseRateController =
-      TextEditingController(); // متحكم نسبة الأرباح الأساسية
-  final _managerExtraRateController =
-      TextEditingController(); // متحكم النسبة الإضافية المتغيرة للمدير
+  final _baseRateController = TextEditingController();
+  final _managerExtraRateController = TextEditingController();
+  final _managerDeductionRateController = TextEditingController();
 
   String _selectedTrack = 'BITCOIN';
+  String? _selectedRecipientUserId;
 
   final List<Map<String, String>> _tracks = [
     {'value': 'BITCOIN', 'label': 'تداول البتكوين'},
@@ -30,11 +32,11 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
   @override
   void initState() {
     super.initState();
-    // استدعاء آمن لمرة واحدة عند الإقلاع لتجنب الـ Infinite Loop
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         final userProvider = Provider.of<UserProvider>(context, listen: false);
         userProvider.loadWallets();
+        userProvider.loadShamCashBalances();
       }
     });
   }
@@ -43,6 +45,7 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
   void dispose() {
     _baseRateController.dispose();
     _managerExtraRateController.dispose();
+    _managerDeductionRateController.dispose();
     super.dispose();
   }
 
@@ -54,11 +57,20 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
     return '${(rate * 100).toStringAsFixed(2)}%';
   }
 
-  // ويدجت بناء كرت سيولة شام كاش الحية لمؤسسة الشامي
+  // 👑 دالة جلب معرف الأدمن الافتراضي من المحافظ
+  String? _getDefaultAdminUserId(List<WalletModel> wallets) {
+    if (wallets.isEmpty) return null;
+    final adminWallet = wallets.cast<WalletModel?>().firstWhere(
+      (w) => w?.userRole == 'ADMIN',
+      orElse: () => wallets.first,
+    );
+    return adminWallet?.userId;
+  }
+
   Widget _buildShamCashStatusCard(UserProvider userProvider) {
     final info = userProvider.shamCashInfo;
 
-    if (info == null || userProvider.isLoading) {
+    if (info == null || userProvider.isShamCashLoading) {
       final progress = userProvider.loadingProgress;
       final percentage = (progress * 100).toInt();
 
@@ -97,9 +109,7 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: LinearProgressIndicator(
-                  value: progress > 0
-                      ? progress
-                      : null, // يتحول إلى شريط محدد النسبة تلقائياً
+                  value: progress > 0 ? progress : null,
                   minHeight: 8,
                   backgroundColor: Colors.white12,
                   color: Colors.greenAccent,
@@ -249,7 +259,6 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
     );
   }
 
-  // لوحة أرباح وعمولات المدير الصافية بعد توزيع البونصات
   Widget _buildManagerProfitDashboard(ProfitProvider profitProvider) {
     final stats = profitProvider.managerProfitStats;
     return Card(
@@ -264,21 +273,26 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
                 Icon(Icons.analytics_rounded, color: Colors.amber),
                 SizedBox(width: 8),
                 Text(
-                  'جدول أرباح المدير والعمولات الإضافية',
+                  'ملخص أرباح وعمولات الإدارة',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                 ),
               ],
             ),
             const Divider(height: 24),
             _buildStatRow(
-              'إجمالي أرباح المسار (الربح العام):',
+              'إجمالي أرباح المسار الخام:',
               _formatCurrency(stats['trackBaseProfit'] ?? 0.0),
               Colors.white,
             ),
             _buildStatRow(
-              'إجمالي العمولة الإضافية الواردة لك (المتغيرة):',
-              _formatCurrency(stats['managerExtraEarned'] ?? 0.0),
+              'إجمالي الخصومات المقتطعة للإدارة:',
+              '+${_formatCurrency(stats['totalDeductionsEarned'] ?? 0.0)}',
               Colors.greenAccent,
+            ),
+            _buildStatRow(
+              'إجمالي العمولة الإضافية الإدارية:',
+              '+${_formatCurrency(stats['managerExtraEarned'] ?? 0.0)}',
+              Colors.lightBlueAccent,
             ),
             _buildStatRow(
               'بونص الإحالة المستقطع والموزع للناس:',
@@ -287,7 +301,7 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
             ),
             const Divider(color: Colors.white30, height: 20),
             _buildStatRow(
-              'صافي أرباح المدير المحفوظة (المتبقي لك):',
+              'صافي الأرباح والعمولات المتبقية للحساب المختار:',
               _formatCurrency(stats['managerNetProfit'] ?? 0.0),
               Colors.amberAccent,
               isBold: true,
@@ -334,6 +348,7 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 72,
+        automaticallyImplyLeading: false,
         title: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -344,12 +359,42 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
             ),
           ],
         ),
+        actions: [
+          PopupMenuButton<String>(
+            tooltip: 'خيارات الإدارة',
+            icon: const Icon(Icons.more_vert_rounded),
+            onSelected: (val) {
+              if (val == 'reset') _showResetProfitsDialog(context);
+            },
+            itemBuilder: (ctx) => [
+              const PopupMenuItem(
+                value: 'reset',
+                child: ListTile(
+                  leading: Icon(
+                    Icons.restart_alt_rounded,
+                    color: AppColors.danger,
+                  ),
+                  title: Text(
+                    'تصفير كافة الأرباح السابقة',
+                    style: TextStyle(
+                      color: AppColors.danger,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: AppPage(
         padding: EdgeInsets.zero,
         child: RefreshIndicator(
           onRefresh: () async {
-            await userProvider.loadWallets();
+            await userProvider.refreshAllData();
           },
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
@@ -359,6 +404,68 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    color: AppColors.danger.withValues(alpha: 0.1),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(
+                        color: AppColors.danger.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(
+                                Icons.warning_amber_rounded,
+                                color: AppColors.danger,
+                                size: 20,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                'تصفية وإعادة ضبط الأرباح',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: AppColors.danger,
+                                ),
+                              ),
+                            ],
+                          ),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.danger,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                            ),
+                            onPressed: () => _showResetProfitsDialog(context),
+                            icon: const Icon(
+                              Icons.restart_alt_rounded,
+                              size: 18,
+                            ),
+                            label: const Text(
+                              'تصفير الأرباح',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
                   _buildShamCashStatusCard(userProvider),
 
                   const AppSectionHeader(
@@ -409,8 +516,8 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
 
                   const SizedBox(height: 24),
                   const AppSectionHeader(
-                    title: 'محرك توزيع الأرباح والبونص',
-                    subtitle: 'اضبط نسب أرباح المسار والعمولة الإضافية',
+                    title: 'محرك توزيع الأرباح والعمولات',
+                    subtitle: 'اضبط نسب أرباح المسار والخصم والعمولة الإضافية',
                     icon: Icons.tune_rounded,
                   ),
                   const SizedBox(height: 12),
@@ -419,18 +526,13 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
                       padding: const EdgeInsets.all(18),
                       child: Column(
                         children: [
-                          // 1. القائمة المنسدلة لاختيار المسار
                           DropdownButtonFormField<String>(
                             value: _selectedTrack,
                             isExpanded: true,
-                            style: const TextStyle(
-                              fontSize: 13,
-                            ), // 👈 تصغير خط النص المختار
+                            style: const TextStyle(fontSize: 13),
                             decoration: const InputDecoration(
                               labelText: 'اختر مسار الاستثمار المستهدف',
-                              labelStyle: TextStyle(
-                                fontSize: 12,
-                              ), // 👈 تصغير خط العنوان
+                              labelStyle: TextStyle(fontSize: 12),
                               border: OutlineInputBorder(),
                               prefixIcon: Icon(Icons.trending_up, size: 20),
                             ),
@@ -439,9 +541,7 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
                                 value: track['value'],
                                 child: Text(
                                   track['label']!,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                  ), // 👈 تصغير خط الخيارات
+                                  style: const TextStyle(fontSize: 13),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               );
@@ -451,56 +551,136 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
                           ),
                           const SizedBox(height: 16),
 
-                          // 2. حقول إدخال النسب المالية
+                          // 2. 👈 القائمة المنسدلة لاختيار الحساب المستفيد (تحديد الأدمن كافتراضي تلقائي)
+                          // 2. 👈 القائمة المنسدلة لاختيار الحساب المستفيد (تحديد الأدمن كافتراضي تلقائي)
+                          Builder(
+                            builder: (context) {
+                              final Map<String, WalletModel> uniqueUsersMap =
+                                  {};
+                              for (var w in userProvider.wallets) {
+                                if (!uniqueUsersMap.containsKey(w.userId)) {
+                                  uniqueUsersMap[w.userId] = w;
+                                }
+                              }
+                              final uniqueUsers = uniqueUsersMap.values
+                                  .toList();
+
+                              // 1. تحديد القيمة التي نريد استخدامها
+                              String? targetId =
+                                  _selectedRecipientUserId ??
+                                  _getDefaultAdminUserId(uniqueUsers);
+
+                              // 2. التحقق: هل القيمة المختارة موجودة فعلياً في القائمة؟
+                              bool isValidValue =
+                                  targetId != null &&
+                                  uniqueUsers.any((u) => u.userId == targetId);
+
+                              // 3. إذا لم تكن موجودة، نستخدم null لمنع الانهيار
+                              final String? finalValue = isValidValue
+                                  ? targetId
+                                  : null;
+
+                              return DropdownButtonFormField<String>(
+                                value: finalValue, // 👈 القيمة الآمنة
+                                isExpanded: true,
+                                style: const TextStyle(fontSize: 13),
+                                decoration: const InputDecoration(
+                                  labelText:
+                                      'الحساب المستفيد من الصافي المتبقي',
+                                  labelStyle: TextStyle(fontSize: 12),
+                                  border: OutlineInputBorder(),
+                                  prefixIcon: Icon(
+                                    Icons.person_pin_rounded,
+                                    size: 20,
+                                    color: AppColors.gold,
+                                  ),
+                                ),
+                                items: uniqueUsers.map((w) {
+                                  return DropdownMenuItem<String>(
+                                    value: w.userId,
+                                    child: Text(
+                                      '${w.userName} ${w.userRole == 'ADMIN' ? '(مدير)' : ''}',
+                                      style: const TextStyle(fontSize: 13),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  );
+                                }).toList(),
+                                onChanged: (val) => setState(
+                                  () => _selectedRecipientUserId = val,
+                                ),
+                                validator: (val) => val == null
+                                    ? 'الرجاء اختيار الحساب المستفيد'
+                                    : null,
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 16),
+
+                          TextFormField(
+                            controller: _baseRateController,
+                            style: const TextStyle(fontSize: 13),
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText:
+                                  'الربح العام الوارد للجميع (%) [إجباري]',
+                              labelStyle: TextStyle(fontSize: 11),
+                              hintText: 'مثال: 16',
+                              hintStyle: TextStyle(fontSize: 11),
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.percent, size: 18),
+                            ),
+                            validator: (val) {
+                              if (val == null || val.trim().isEmpty) {
+                                return 'أدخل النسبة العامة';
+                              }
+                              final rate = double.tryParse(val);
+                              if (rate == null || rate <= 0 || rate > 100) {
+                                return 'نسبة غير صالحة';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 12),
+
                           Row(
                             children: [
                               Expanded(
                                 child: TextFormField(
-                                  controller: _baseRateController,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                  ), // 👈 تصغير خط الإدخال
+                                  controller: _managerDeductionRateController,
+                                  style: const TextStyle(fontSize: 12),
                                   keyboardType:
                                       const TextInputType.numberWithOptions(
                                         decimal: true,
                                       ),
                                   decoration: const InputDecoration(
-                                    labelText: 'الربح العام للجميع (%)',
-                                    labelStyle: TextStyle(
-                                      fontSize: 11,
-                                    ), // 👈 تصغير خط العنوان
-                                    hintText: 'مثال: 5',
-                                    hintStyle: TextStyle(fontSize: 11),
+                                    labelText:
+                                        'خصمك من الربح العام (%) [اختياري]',
+                                    labelStyle: TextStyle(fontSize: 10),
+                                    hintText: 'مثال: 2 (اختياري)',
+                                    hintStyle: TextStyle(fontSize: 10),
                                     border: OutlineInputBorder(),
-                                    prefixIcon: Icon(Icons.percent, size: 18),
+                                    prefixIcon: Icon(
+                                      Icons.content_cut_rounded,
+                                      size: 18,
+                                    ),
                                   ),
-                                  validator: (val) {
-                                    if (val == null || val.trim().isEmpty)
-                                      return 'أدخل النسبة';
-                                    final rate = double.tryParse(val);
-                                    if (rate == null || rate <= 0 || rate > 100)
-                                      return 'غير صالح';
-                                    return null;
-                                  },
                                 ),
                               ),
-                              const SizedBox(width: 12),
+                              const SizedBox(width: 10),
                               Expanded(
                                 child: TextFormField(
                                   controller: _managerExtraRateController,
-                                  style: const TextStyle(
-                                    fontSize: 10,
-                                  ), // 👈 تصغير خط الإدخال
+                                  style: const TextStyle(fontSize: 12),
                                   keyboardType:
                                       const TextInputType.numberWithOptions(
                                         decimal: true,
                                       ),
                                   decoration: const InputDecoration(
-                                    labelText: 'عمولتك الإضافية (%)',
-                                    labelStyle: TextStyle(
-                                      fontSize: 10,
-                                    ), // 👈 تصغير خط العنوان
-                                    hintText: 'مثال: 0.5',
+                                    labelText: 'عمولتك الإضافية (%) [اختياري]',
+                                    labelStyle: TextStyle(fontSize: 10),
+                                    hintText: 'مثال: 0.5 (اختياري)',
                                     hintStyle: TextStyle(fontSize: 10),
                                     border: OutlineInputBorder(),
                                     prefixIcon: Icon(
@@ -508,21 +688,12 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
                                       size: 18,
                                     ),
                                   ),
-                                  validator: (val) {
-                                    if (val == null || val.trim().isEmpty)
-                                      return 'أدخل النسبة';
-                                    final rate = double.tryParse(val);
-                                    if (rate == null || rate < 0 || rate > 100)
-                                      return 'غير صالح';
-                                    return null;
-                                  },
                                 ),
                               ),
                             ],
                           ),
                           const SizedBox(height: 20),
 
-                          // 3. أزرار المحاكاة والضخ
                           LayoutBuilder(
                             builder: (context, constraints) {
                               final simulationButton = OutlinedButton.icon(
@@ -695,13 +866,26 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
   Widget _buildFinancialResults(ProfitProvider provider) {
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final baseRate = double.tryParse(_baseRateController.text) ?? 0.0;
+    final globalDeductionRate =
+        double.tryParse(_managerDeductionRateController.text) ?? 0.0;
+    final stats = provider.managerProfitStats;
+    final double netAdminProfit = stats['managerNetProfit'] ?? 0.0;
+
+    final filteredWallets = userProvider.wallets
+        .where((w) => w.trackType == _selectedTrack)
+        .toList();
+
+    // 👈 المعرف المستهدف (المختار أو الأدمن الافتراضي)
+    final effectiveTargetUserId =
+        _selectedRecipientUserId ??
+        _getDefaultAdminUserId(userProvider.wallets);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'كشف أرباح وبونصات المشتركين الافتراضي:',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          'كشف تفاصيل الأرباح والخصومات والبونصات للمشتركين:',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
         Card(
@@ -724,7 +908,13 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
                 ),
                 DataColumn(
                   label: Text(
-                    'الربح الأساسي',
+                    'الربح العام',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                DataColumn(
+                  label: Text(
+                    'اقتطاع الإدارة',
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -741,66 +931,162 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
                   ),
                 ),
               ],
-              rows: userProvider.wallets
-                  .where((w) => w.trackType == _selectedTrack)
-                  .map((wallet) {
-                    final isAdmin = wallet.userRole == 'ADMIN';
+              rows: filteredWallets.map((wallet) {
+                final bool isSelectedTarget =
+                    wallet.userId == effectiveTargetUserId;
+                final double grossProfit =
+                    wallet.principalBalance * (baseRate / 100);
 
-                    final double grossProfit =
-                        wallet.principalBalance * (baseRate / 100);
-                    double bonusRate =
-                        0.0; // سيقرأ البونص التابع له تلقائياً بحسب هيكليتك الجديدة
-                    double bonusProfit = wallet.principalBalance * bonusRate;
-                    double netProfitAdded = grossProfit + bonusProfit;
-
-                    return DataRow(
-                      color: WidgetStateProperty.resolveWith<Color?>((states) {
-                        if (isAdmin) {
-                          return Theme.of(
-                            context,
-                          ).colorScheme.primaryContainer.withValues(alpha: .35);
-                        }
-                        return null;
-                      }),
-                      cells: [
-                        DataCell(
+                return DataRow(
+                  color: WidgetStateProperty.resolveWith<Color?>((states) {
+                    if (isSelectedTarget) {
+                      return AppColors.goldSoft.withValues(alpha: 0.6);
+                    }
+                    return null;
+                  }),
+                  cells: [
+                    DataCell(
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isSelectedTarget) ...[
+                            const Icon(
+                              Icons.stars_rounded,
+                              color: AppColors.gold,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 4),
+                          ],
                           Text(
-                            isAdmin
-                                ? '${wallet.userName} (أنت)'
+                            isSelectedTarget
+                                ? '${wallet.userName} (المستفيد الإداري)'
                                 : wallet.userName,
                             style: TextStyle(
-                              fontWeight: isAdmin
+                              fontWeight: isSelectedTarget
                                   ? FontWeight.bold
                                   : FontWeight.normal,
                             ),
                           ),
-                        ),
-                        DataCell(
-                          Text(_formatCurrency(wallet.principalBalance)),
-                        ),
-                        DataCell(Text(_formatCurrency(grossProfit))),
-                        DataCell(
-                          Text(
-                            _formatCurrency(bonusProfit),
+                        ],
+                      ),
+                    ),
+                    DataCell(Text(_formatCurrency(wallet.principalBalance))),
+                    DataCell(Text(_formatCurrency(grossProfit))),
+                    DataCell(
+                      FutureBuilder<DocumentSnapshot>(
+                        future: FirebaseFirestore.instance
+                            .collection('Users')
+                            .doc(wallet.userId)
+                            .get(),
+                        builder: (context, snapshot) {
+                          double deductionRate = globalDeductionRate;
+                          if (snapshot.hasData) {
+                            final userData =
+                                snapshot.data!.data()
+                                    as Map<String, dynamic>? ??
+                                {};
+                            if (userData['customDeductionRate'] != null) {
+                              deductionRate =
+                                  (userData['customDeductionRate'] as num)
+                                      .toDouble();
+                            }
+                          }
+                          final double deductionAmount =
+                              wallet.principalBalance * (deductionRate / 100);
+
+                          return Text(
+                            '-${_formatCurrency(deductionAmount)}',
+                            style: const TextStyle(
+                              color: Colors.redAccent,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    DataCell(
+                      FutureBuilder<DocumentSnapshot>(
+                        future: FirebaseFirestore.instance
+                            .collection('Users')
+                            .doc(wallet.userId)
+                            .get(),
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) return const Text('\$0.00');
+                          final userData =
+                              snapshot.data!.data() as Map<String, dynamic>? ??
+                              {};
+                          final double bonusRate =
+                              (userData['referralBonusRate'] as num?)
+                                  ?.toDouble() ??
+                              0.0;
+                          final double bonusAmount =
+                              wallet.principalBalance * (bonusRate / 100);
+
+                          return Text(
+                            '+${_formatCurrency(bonusAmount)}',
                             style: const TextStyle(
                               color: Colors.teal,
                               fontWeight: FontWeight.w600,
                             ),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            _formatCurrency(netProfitAdded),
-                            style: const TextStyle(
+                          );
+                        },
+                      ),
+                    ),
+                    DataCell(
+                      FutureBuilder<DocumentSnapshot>(
+                        future: FirebaseFirestore.instance
+                            .collection('Users')
+                            .doc(wallet.userId)
+                            .get(),
+                        builder: (context, snapshot) {
+                          double bonusAmount = 0.0;
+                          double deductionRate = globalDeductionRate;
+
+                          if (snapshot.hasData) {
+                            final userData =
+                                snapshot.data!.data()
+                                    as Map<String, dynamic>? ??
+                                {};
+                            final double bonusRate =
+                                (userData['referralBonusRate'] as num?)
+                                    ?.toDouble() ??
+                                0.0;
+                            bonusAmount =
+                                wallet.principalBalance * (bonusRate / 100);
+
+                            if (userData['customDeductionRate'] != null) {
+                              deductionRate =
+                                  (userData['customDeductionRate'] as num)
+                                      .toDouble();
+                            }
+                          }
+
+                          final double deductionAmount =
+                              wallet.principalBalance * (deductionRate / 100);
+                          final double netBaseProfit =
+                              grossProfit - deductionAmount;
+
+                          final double extraNet = isSelectedTarget
+                              ? netAdminProfit
+                              : 0.0;
+                          final double totalDue =
+                              netBaseProfit + bonusAmount + extraNet;
+
+                          return Text(
+                            _formatCurrency(totalDue),
+                            style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              color: Colors.green,
+                              color: isSelectedTarget
+                                  ? AppColors.emerald
+                                  : Colors.green,
                             ),
-                          ),
-                        ),
-                      ],
-                    );
-                  })
-                  .toList(),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              }).toList(),
             ),
           ),
         ),
@@ -810,18 +1096,46 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
 
   void _getProviderAndRun(bool isActual) {
     if (_formKey.currentState!.validate()) {
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+
+      // 👈 اختيار الأدمن الافتراضي تلقائياً إن لم يُحدد حساب
+      final targetUserId =
+          _selectedRecipientUserId ??
+          _getDefaultAdminUserId(userProvider.wallets);
+
+      if (targetUserId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر العثور على حساب إداري مستفيد.')),
+        );
+        return;
+      }
+
       final baseRate = double.parse(_baseRateController.text) / 100;
       final managerExtraRate =
-          double.parse(_managerExtraRateController.text) / 100;
+          (double.tryParse(_managerExtraRateController.text.trim()) ?? 0.0) /
+          100;
+      final managerDeductionRate =
+          (double.tryParse(_managerDeductionRateController.text.trim()) ??
+              0.0) /
+          100;
 
       final provider = Provider.of<ProfitProvider>(context, listen: false);
       if (isActual) {
-        _showConfirmDialog(provider, baseRate, managerExtraRate);
+        _showConfirmDialog(
+          provider,
+          baseRate,
+          managerExtraRate,
+          managerDeductionRate,
+          targetUserId,
+        );
       } else {
         provider.distributeProfitsWithBonus(
           trackType: _selectedTrack,
           baseProfitRate: baseRate,
           managerExtraRate: managerExtraRate,
+          managerDeductionRate: managerDeductionRate,
+          targetUserId: targetUserId,
+          isSimulation: true,
         );
       }
     }
@@ -830,10 +1144,66 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
   void _handleSimulation() => _getProviderAndRun(false);
   void _handleDistribution() => _getProviderAndRun(true);
 
+  void _showResetProfitsDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(
+          Icons.warning_amber_rounded,
+          color: AppColors.danger,
+          size: 36,
+        ),
+        title: const Text('تصفير ومسح الأرباح السابقة؟'),
+        content: const Text(
+          'سيتم إعادة رصيد أرباح جميع المحافظ والمستثمرين إلى \$0.00، وحذف كافة سندات الأرباح والبونصات المسجلة. هل أنت متأكد؟',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.danger,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final profitProvider = Provider.of<ProfitProvider>(
+                context,
+                listen: false,
+              );
+              final userProvider = Provider.of<UserProvider>(
+                context,
+                listen: false,
+              );
+
+              final success = await profitProvider.resetAllProfits();
+
+              if (context.mounted && success) {
+                await userProvider.loadWallets();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      '🎉 تم مسح وإعادة تصفير جميع الأرباح والبونصات بنجاح.',
+                    ),
+                  ),
+                );
+              }
+            },
+            child: const Text('نعم، صفّر جميع الأرباح الآن'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showConfirmDialog(
     ProfitProvider provider,
     double baseRate,
     double extraRate,
+    double deductionRate,
+    String targetUserId,
   ) {
     showDialog(
       context: context,
@@ -845,7 +1215,7 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
         ),
         title: const Text('تأكيد الضخ المالي الفعلي'),
         content: Text(
-          'هل أنت متأكد من اعتماد ونشر الأرباح بنسبة ${_formatPercent(baseRate)} مع عمولة متغيرة ${_formatPercent(extraRate)}؟ سيتم شحن محافظ المشتركين وتوليد السندات والبونصات فوراً في فيربيس ولا يمكن التراجع!',
+          'هل أنت متأكد من اعتماد ونشر الأرباح بنسبة ${_formatPercent(baseRate)}، مع خصم إداري ${_formatPercent(deductionRate)} وعمولة إضافية ${_formatPercent(extraRate)}؟ سيتم شحن المحافظ وتحويل الصافي للحساب المختار فوراً ولا يمكن التراجع!',
         ),
         actions: [
           TextButton(
@@ -864,18 +1234,22 @@ class _ProfitSimulationScreenState extends State<ProfitSimulationScreen> {
                 trackType: _selectedTrack,
                 baseProfitRate: baseRate,
                 managerExtraRate: extraRate,
+                managerDeductionRate: deductionRate,
+                targetUserId: targetUserId,
+                isSimulation: false,
               );
 
               if (provider.errorMessage == null && mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text(
-                      '🎉 تم ترحيل الأرباح الأساسية والبونصات للمحافظ سحابياً بنجاح.',
+                      '🎉 تم ترحيل الأرباح والخصومات والبونصات والصافي للحساب المختار سحابياً بنجاح.',
                     ),
                   ),
                 );
                 _baseRateController.clear();
                 _managerExtraRateController.clear();
+                _managerDeductionRateController.clear();
                 Provider.of<UserProvider>(context, listen: false).loadWallets();
               }
             },

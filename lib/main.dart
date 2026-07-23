@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -21,7 +22,13 @@ import 'presentation/widgets/app_ui.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   await Firebase.initializeApp(); // تهيئة الفيربيس مباشرة
+  // 👈 تفعيل التخزين المحلي المؤقت لبيانات التطبيق
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+  );
   runApp(const FinancialApp());
 }
 
@@ -40,7 +47,6 @@ class FinancialApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => TransactionProvider()),
         ChangeNotifierProvider(create: (_) => AiProvider()),
-        // تم الاستغناء عن ServerFileProvider بنجاح لعدم الحاجة إليه
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) => MaterialApp(
@@ -81,6 +87,17 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _selectedIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // 🛠️ فحص وتصحيح مسارات الفايربيس (بيتكوين / منظمات) فور فتح التطبيق
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<UserProvider>().fixAndInitializeTracks();
+      }
+    });
+  }
 
   void _selectDestination(int index) => setState(() => _selectedIndex = index);
 
